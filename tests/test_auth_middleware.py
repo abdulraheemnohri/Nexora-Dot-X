@@ -43,7 +43,8 @@ def test_api_requires_token_when_enabled():
     os.environ["NEXORA_SECRET_API_TOKEN"] = "nx_test_token"
     try:
         client = TestClient(_app())
-        assert client.get("/hello").status_code == 303
+        blocked = client.get("/hello", follow_redirects=False)
+        assert blocked.status_code == 303
         ok = client.get("/hello", headers={"Authorization": "Bearer nx_test_token"},
                         follow_redirects=False)
         assert ok.status_code == 200

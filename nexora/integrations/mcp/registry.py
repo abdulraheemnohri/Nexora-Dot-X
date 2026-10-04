@@ -3,7 +3,6 @@
 MCP server tools are imported into the same Tool Registry, so every MCP
 tool call passes the System 1 policy engine exactly like built-in tools.
 """
-import json
 from dataclasses import dataclass
 
 
@@ -38,11 +37,12 @@ class MCPRegistry:
         if s is None or not s.enabled:
             return []
         try:
-            import subprocess, json
+            import json
+            import subprocess
             if s.transport == "stdio" and s.command:
                 req = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
                 proc = subprocess.run(s.command.split(), input=json.dumps(req),
-                                     capture_output=True, text=True, timeout=30)
+                                       capture_output=True, text=True, timeout=30)
                 for line in proc.stdout.splitlines():
                     try:
                         data = json.loads(line)

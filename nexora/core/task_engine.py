@@ -1,6 +1,7 @@
 """Persistent task engine with the full Nexora task lifecycle."""
 import enum
 import json
+
 from nexora.database.models import Task
 from nexora.database import repositories as repo
 from nexora.core.events import bus
@@ -48,10 +49,16 @@ class TaskEngine:
             return None
         return repo.update_fields(t, plan=json.dumps(steps, ensure_ascii=False))
 
-    def get_plan(self, task: Task) -> list:
-        if not task.plan:
+    def get_plan(self, task) -> list:
+        # accept a Task object or an id; always read the freshest row
+        if isinstance(task, str):
+            fresh = repo.get_by_id(Task, task)
+        else:
+            fresh = repo.get_by_id(Task, task.id)
+        t = fresh or (None if isinstance(task, str) else task)
+        if t is None or not getattr(t, "plan", None):
             return []
         try:
-            return json.loads(task.plan)
+            return json.loads(t.plan)
         except json.JSONDecodeError:
             return []

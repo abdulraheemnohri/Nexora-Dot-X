@@ -23,16 +23,23 @@ class Risk(Enum):
 
 
 DANGEROUS_PATTERNS = [
-    r"rms+-rf", r"mkfs", r"dds+if=", r":()s*{.*};s*:",
-    r"shutdown", r"reboot", r"chmods+777s+/",
-    r">s*/dev/sd", r"curl[^|]*|s*(ba)?sh",
-    r"historys+-c", r"cat.*(id_rsa|.env|credentials)",
+    r"rm\s+-rf",
+    r"mkfs",
+    r"dd\s+if=",
+    r":\(\)\s*\{.*\};\s*:",
+    r"shutdown",
+    r"reboot",
+    r"chmod\s+777\s+/",
+    r">\s*/dev/sd",
+    r"curl[^|]*\|\s*(ba)?sh",
+    r"history\s+-c",
+    r"cat\s+.*(id_rsa|\.env|credentials)",
 ]
 
 ASK_PATTERNS = [
-    r"apt", r"pips+install", r"npms+install",
-    r"gits+push", r"gits+reset", r"systemctl",
-    r"sudo", r"kill", r"mv", r"rm",
+    r"\bapt\b", r"pip\s+install", r"npm\s+install",
+    r"git\s+push", r"git\s+reset", r"systemctl",
+    r"\bsudo\b", r"\bkill\b", r"\bmv\b", r"\brm\b",
 ]
 
 SAFE_PATTERNS = [
@@ -66,7 +73,7 @@ class PolicyEngine:
         for rx in self._dangerous:
             if rx.search(action):
                 return PolicyResult(Decision.BLOCK, Risk.CRITICAL,
-                                    f"matched dangerous rule {rx.pattern}", rx.pattern)
+                                    "matched dangerous rule " + rx.pattern, rx.pattern)
         for rx in self._safe:
             if rx.match(action):
                 return PolicyResult(Decision.ALLOW, Risk.SAFE, "safe-listed command", rx.pattern)

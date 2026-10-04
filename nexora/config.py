@@ -17,6 +17,7 @@ class Settings:
         self.auth_enabled: bool = os.getenv("NEXORA_AUTH_ENABLED", "false").lower() == "true"
         self.log_level: str = os.getenv("NEXORA_LOG_LEVEL", "INFO")
         self.default_model: str = os.getenv("NEXORA_DEFAULT_MODEL", "litert")
+        self._db_path: Path | None = None
 
     def ensure_dirs(self):
         for d in (self.data_dir, self.model_dir, self.litert_dir,
@@ -25,7 +26,13 @@ class Settings:
 
     @property
     def db_path(self) -> Path:
+        if self._db_path is not None:
+            return self._db_path
         return self.data_dir / "nexora.db"
+
+    @db_path.setter
+    def db_path(self, value):
+        self._db_path = Path(value)
 
 
 settings = Settings()

@@ -1,5 +1,6 @@
 """HTTP tool, constrained by the network policy (offline by default)."""
-from nexora.config import settings
+import os
+
 from nexora.tools.registry import ToolSpec
 
 
@@ -7,7 +8,8 @@ class HttpTool:
     id = "http"
 
     def run(self, action: str) -> dict:
-        if settings.local_only:
+        # env checked at call time so config reloads / test patches apply
+        if os.getenv("NEXORA_LOCAL_ONLY", "true").lower() == "true":
             return {"ok": False,
                     "output": "network disabled: NEXORA_LOCAL_ONLY=true"}
         import httpx
@@ -20,7 +22,7 @@ class HttpTool:
                 return {"ok": True, "output": " ".join(text.split())[:20000]}
             return {"ok": True, "output": r.text[:20000]}
         except Exception as e:
-            return {"ok": False, "output": f"http error: {e}"}
+            return {"ok": False, "output": "http error: " + str(e)}
 
 
 def register(registry) -> ToolSpec:
