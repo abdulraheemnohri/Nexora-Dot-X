@@ -1,6 +1,7 @@
 """FastHTML application: the Nexora control center (HTMX + dark UI)."""
 from fasthtml.common import *
 from starlette.responses import RedirectResponse
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from nexora.config import settings
 from nexora.database.engine import init_db
@@ -10,6 +11,7 @@ from nexora.bots.templates import TEMPLATES
 from nexora.core.task_engine import TaskEngine, TaskStatus
 from nexora.core.executor import Executor
 from nexora.core.events import bus
+from nexora.core.ws import hub
 from nexora.memory.manager import MemoryManager
 from nexora.models.router import ModelRouter
 from nexora.models.litert.diagnostics import scan, doctor as litert_doctor
@@ -25,16 +27,17 @@ from nexora.channels.gateway import Gateway, WebChannel
 from nexora.channels.telegram import TelegramChannel
 from nexora.channels.discord import DiscordChannel
 from nexora.channels.slack import SlackChannel
+from nexora.ui.wizard import wizard_page, create_first_dot
 
 NAV = [("Dashboard", "/"), ("Dots", "/dots"), ("Tasks", "/tasks"),
        ("Approvals", "/approvals"), ("Activity", "/activity"),
        ("Models", "/models"), ("Memory", "/memory"),
-       ("Scheduler", "/scheduler"), ("Settings", "/settings")]
+       ("Scheduler", "/scheduler"), ("Setup", "/wizard"), ("Settings", "/settings")]
 
 
-def shell(title: str, *body):
+def shell(title, *body):
     nav = Nav(*[A(label, href=href, cls="navlink") for label, href in NAV], cls="nav")
-    return Title(f"Nexora Dot X - {title}"), Main(
+    return Title("Nexora Dot X - " + title), Main(
         H1("Nexora Dot X", cls="brand"), nav, Div(*body, cls="container"))
 
 
@@ -55,7 +58,6 @@ def create_app():
             pass
     executor = Executor(tool_registry=registry)
     scheduler = Scheduler()
-
     gateway = Gateway()
     gateway.register(WebChannel())
 
@@ -71,15 +73,16 @@ def create_app():
         running = [t for t in tasks.list() if t.status == TaskStatus.RUNNING.value]
         return shell("Dashboard",
             Section(H2("System status"),
-                    P(f"Mode: {'LOCAL ONLY' if settings.local_only else 'hybrid'}"),
-                    P(f"Active Dots: {sum(1 for d in bots.list() if d.status != 'offline')}"),
-                    P(f"Running tasks: {len(running)}"),
-                    P(f"Pending approvals: {len(_pending())}"),
-                    P("Model bus: " + ", ".join(
-                        f"{m.name}={m.status}" for m in models.available()) or "none"),
+                    P("Mode: " + ("LOCAL ONLY" if settings.local_only else "hybrid")),
+                    P("Active Dots: " + str(sum(1 for d in bots.list() if d.status != "offline"))),
+                    P("Running tasks: " + str(len(running))),
+                    P("Pending approvals: " + str(len(_pending()))),
+                    P("Model bus: " + (", ".join(
+                        m.name + "=" + m.status for m in models.available()) or "none")),
                     cls="card"),
             Section(H2("Recent activity"),
-                    *((Li(e.kind) for e in bus.tail(10)) if bus.tail(10) else P("No activity yet.")),
+                    *((Li(e.kind) for e in bus.tail(10)) if bus.tail(10)
+                      else [P("No activity yet.")]),
                     cls="card"))
 
     @rt("/dots")
@@ -98,12 +101,12 @@ def create_app():
                          Button("Create from template", cls="btn"),
                          action="/api/dots/template", method="post"), cls="card"),
             Section(H2("Dots"), *[
-                Div(H3(f"{d.name} - {d.status}"),
+                Div(H3(d.name + " - " + d.status),
                     P(d.mission or "No mission"),
-                    A("start", href=f"/api/dots/{d.id}/start"),
-                    " | ", A("pause", href=f"/api/dots/{d.id}/pause"),
-                    " | ", A("stop", href=f"/api/dots/{d.id}/stop"),
-                    " | ", A("duplicate", href=f"/api/dots/{d.id}/duplicate"),
+                    A("start", href="/api/dots/" + d.id + "/start"),
+                    " | ", A("pause", href="/api/dots/" + d.id + "/pause"),
+                    " | ", A("stop", href="/api/dots/" + d.id + "/stop"),
+                    " | ", A("duplicate", href="/api/dots/" + d.id + "/duplicate"),
                     cls="dot-card") for d in items] or [P("No Dots yet.")], cls="card"))
 
     @rt("/api/dots", methods=["POST"])
@@ -146,10 +149,10 @@ def create_app():
                          Button("Queue", cls="btn"),
                          action="/api/tasks", method="post"), cls="card"),
             Section(H2("Tasks"), *[
-                Div(H3(f"[{t.status}] {t.goal}"),
-                    P(f"id {t.id} | dot {t.dot_id}"),
+                Div(H3("[" + t.status + "] " + t.goal),
+                    P("id " + t.id + " | dot " + str(t.dot_id)),
                     P(t.result or t.error or ""),
-                    A("cancel", href=f"/api/tasks/{t.id}/cancel"),
+                    A("cancel", href="/api/tasks/" + t.id + "/cancel"),
                     cls="task-card") for t in tasks.list(50)] or [P("No tasks.")],
                 cls="card"))
 
@@ -172,13 +175,14 @@ def create_app():
     def approvals_page():
         return shell("Approvals",
             Section(H2("Pending"), *[
-                Div(H3(f"{a.tool}: {a.action}"),
-                    P(f"risk {a.risk} - {a.reason}"),
-                    A("Approve once", href=f"/api/approvals/{a.id}/approve"),
-                    " | ", A("Approve always", href=f"/api/approvals/{a.id}/approve?always=1"),
-                    " | ", A("Reject", href=f"/api/approvals/{a.id}/reject"),
-                    cls="approval-card") for a in _pending()] or [P("No pending approvals.")],
-                cls="card"))
+                Div(H3(a.tool + ": " + a.action),
+                    P("risk " + a.risk + " - " + a.reason),
+                    A("Approve once", href="/api/approvals/" + a.id + "/approve"),
+                    " | ", A("Approve always",
+                             href="/api/approvals/" + a.id + "/approve?always=1"),
+                    " | ", A("Reject", href="/api/approvals/" + a.id + "/reject"),
+                    cls="approval-card") for a in _pending()]
+                or [P("No pending approvals.")], cls="card"))
 
     @rt("/api/approvals/{aid}/approve")
     def approve(aid: str, always: str = ""):
@@ -197,7 +201,7 @@ def create_app():
         events = bus.tail(50)
         return shell("Activity",
             Section(H2("Event timeline"),
-                    *((Li(f"{e.kind}: {e.payload[:120]}") for e in events)
+                    *((Li(e.kind + ": " + e.payload[:120]) for e in events)
                       if events else [P("No events yet.")]), cls="card"))
 
     @rt("/models")
@@ -206,14 +210,15 @@ def create_app():
         checks = litert_doctor()
         return shell("Models",
             Section(H2("Model bus"),
-                    *(P(f"{m.name}: {m.status} - {m.detail}")
+                    *(P(m.name + ": " + m.status + " - " + m.detail)
                       for m in models.available()), cls="card"),
             Section(H2("LiteRT-LM"),
                     *(P(c) for c in checks),
                     H3("Installed models"),
-                    *((P(f"{m['name']} ({m['size']} bytes, context {m['context']})")
-                       for m in info["models"]) if info["models"]
-                      else [P("No .litertlm models installed.")]), cls="card"))
+                    *((P(m["name"] + " (" + str(m["size"]) + " bytes, context "
+                         + str(m["context"]) + ")") for m in info["models"])
+                      if info["models"] else [P("No .litertlm models installed.")]),
+                    cls="card"))
 
     @rt("/memory")
     def memory_page(q: str = ""):
@@ -224,7 +229,7 @@ def create_app():
                          Button("Search", cls="btn"),
                          action="/memory", method="get"), cls="card"),
             Section(H2("Records"), *[
-                Div(P(f"[{r.kind}] {r.content[:160]}"), cls="mem-card")
+                Div(P("[" + r.kind + "] " + r.content[:160]), cls="mem-card")
                 for r in rows[:50]] or [P("Memory is empty.")], cls="card"))
 
     @rt("/scheduler")
@@ -239,8 +244,8 @@ def create_app():
                          action="/api/schedules", method="post"), cls="card"),
             Section(H2("Schedules"), *[
                 Div(H3(j.goal),
-                    P(f"every {int(j.every_seconds)}s | enabled {j.enabled}"),
-                    A("remove", href=f"/api/schedules/{j.id}/remove"),
+                    P("every " + str(int(j.every_seconds)) + "s | enabled " + str(j.enabled)),
+                    A("remove", href="/api/schedules/" + j.id + "/remove"),
                     cls="task-card") for j in jobs] or [P("No schedules.")], cls="card"))
 
     @rt("/api/schedules", methods=["POST"])
@@ -261,25 +266,49 @@ def create_app():
         scheduler.run_due()
         return RedirectResponse("/tasks", status_code=303)
 
+    @rt("/wizard")
+    def wizard(step: int = 1):
+        return wizard_page(step)
+
+    @rt("/api/wizard/dot", methods=["POST"])
+    def wizard_dot(name: str = "", template: str = ""):
+        return create_first_dot({"name": name, "template": template})
+
+    @rt("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        await websocket.accept()
+        await hub.connect(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            hub.disconnect(websocket)
+
     @rt("/settings")
     def settings_page():
         channels = [("telegram", TelegramChannel()), ("discord", DiscordChannel()),
                     ("slack", SlackChannel())]
+        from nexora.integrations.homeassistant.client import HomeAssistant
+        ha = HomeAssistant()
         return shell("Settings",
             Section(H2("System"),
-                    P(f"Host: {settings.host}:{settings.port}"),
-                    P(f"Local only: {settings.local_only}"),
-                    P(f"Auth enabled: {settings.auth_enabled}"),
-                    P(f"Data dir: {settings.data_dir}"),
-                    P(f"Model dir: {settings.model_dir}"), cls="card"),
+                    P("Host: " + settings.host + ":" + str(settings.port)),
+                    P("Local only: " + str(settings.local_only)),
+                    P("Auth enabled: " + str(settings.auth_enabled)),
+                    P("Data dir: " + str(settings.data_dir)),
+                    P("Model dir: " + str(settings.model_dir)), cls="card"),
             Section(H2("Channels"), *[
-                P(f"{n}: {'enabled' if c.enabled() else 'not configured'}")
-                for n, c in channels] + [P("web: enabled")], cls="card"))
+                P(n + ": " + ("enabled" if c.enabled() else "not configured"))
+                for n, c in channels] + [P("web: enabled")], cls="card"),
+            Section(H2("Integrations"),
+                    P("Home Assistant: "
+                      + ("configured" if ha.configured() else "not configured")),
+                    P("MCP: registry available (see docs/MCP.md)"), cls="card"))
 
     @rt("/api/status")
     def status():
         return {"status": "ready", "local_only": settings.local_only,
                 "database": "sqlite",
-                "providers": [f"{m.name}:{m.status}" for m in models.available()]}
+                "providers": [m.name + ":" + m.status for m in models.available()]}
 
     return app, rt
