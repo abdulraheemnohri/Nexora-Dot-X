@@ -14,6 +14,42 @@ from nexora.control.approvals import ApprovalCenter
 from nexora.security.auth import AuthManager
 from nexora.security.middleware import COOKIE, AuthMiddleware
 
+CHAT_JS = r"""const log = document.getElementById('chat-log');
+let dotId = '';
+const sel = document.getElementById('chat-dot');
+if (sel) { dotId = sel.value; sel.onchange = function() { dotId = sel.value; connect(); }; }
+let ws = null;
+function addMsg(who, text) {
+  const p = document.createElement('p');
+  p.innerHTML = '<b>' + who + ':</b> ';
+  p.appendChild(document.createTextNode(text));
+  log.appendChild(p);
+  log.scrollTop = log.scrollHeight;
+}
+function connect() {
+  if (ws) { ws.onclose = null; ws.close(); }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws/chat?dot_id=' + encodeURIComponent(dotId));
+  ws.onmessage = function(ev) {
+    const m = JSON.parse(ev.data);
+    if (m.kind === 'chat.chunk') { log.lastChild.appendChild(document.createTextNode(m.payload.text)); log.scrollTop = log.scrollHeight; }
+    else if (m.kind === 'chat.start') { addMsg('Dot', ''); }
+    else if (m.kind === 'chat.error') { addMsg('Error', m.payload.error); }
+  };
+  ws.onclose = function() { ws = null; };
+}
+document.getElementById('chat-form').onsubmit = function(ev) {
+  ev.preventDefault();
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  addMsg('You', text);
+  if (!ws) { connect(); setTimeout(function() { if (ws && ws.readyState === 1) ws.send(text); }, 300); }
+  else { ws.send(text); }
+  input.value = '';
+};
+if (window.WebSocket) connect();"""
+
 
 def create_app():
     app, rt = fast_app()
@@ -35,8 +71,8 @@ def create_app():
                           " · ", A("Memory", href="/memory"), " · ", A("Models", href="/models"),
                           " · ", A("Tasks", href="/tasks"), " · ", A("Approvals", href="/approvals"),
                           " · ", A("Settings", href="/settings")),
-                      P(f"Local-only: {settings.local_only} · Profile: {get_profile().name} · "
-                        f"Model: {ready or 'none ready'}"))
+                      P("Local-only: " + str(settings.local_only) + " · Profile: " + get_profile().name
+                        + " · Model: " + (ready or "none ready")))
 
     @rt("/api/status")
     def status():
@@ -44,7 +80,6 @@ def create_app():
                 "database": "sqlite", "profile": get_profile().name,
                 "model": models.ready_backend()}
 
-    # ---- auth ----
     @rt("/login")
     def login_page():
         return Titled("Login", H1("Nexora Login"),
@@ -67,7 +102,6 @@ def create_app():
         resp.delete_cookie(COOKIE)
         return resp
 
-    # ---- chat ----
     @rt("/chat")
     def chat_page():
         with SessionFactory() as s:
@@ -78,42 +112,7 @@ def create_app():
                       Div(id="chat-log", style="border:1px solid #ccc;height:300px;overflow-y:auto;padding:8px"),
                       Form(Input(name="message", placeholder="Message", required=True, id="chat-input"),
                            Button("Send"), id="chat-form"),
-                      Script("const log = document.getElementById('chat-log');
-let dotId = '';
-const sel = document.getElementById('chat-dot');
-if (sel) { dotId = sel.value; sel.onchange = () => { dotId = sel.value; connect(); }; }
-let ws = null;
-function addMsg(who, text) {
-  const p = document.createElement('p');
-  p.innerHTML = '<b>' + who + ':</b> ';
-  p.appendChild(document.createTextNode(text));
-  log.appendChild(p);
-  log.scrollTop = log.scrollHeight;
-}
-function connect() {
-  if (ws) { ws.onclose = null; ws.close(); }
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(proto + '://' + location.host + '/ws/chat?dot_id=' + encodeURIComponent(dotId));
-  ws.onmessage = (ev) => {
-    const m = JSON.parse(ev.data);
-    if (m.kind === 'chat.chunk') { log.lastChild.appendChild(document.createTextNode(m.payload.text)); log.scrollTop = log.scrollHeight; }
-    else if (m.kind === 'chat.start') { addMsg('Dot', ''); }
-    else if (m.kind === 'chat.error') { addMsg('Error', m.payload.error); }
-  };
-  ws.onclose = () => { ws = null; };
-}
-document.getElementById('chat-form').onsubmit = (ev) => {
-  ev.preventDefault();
-  const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  addMsg('You', text);
-  if (!ws) { connect(); setTimeout(() => { if (ws && ws.readyState === 1) ws.send(text); }, 300); }
-  else { ws.send(text); }
-  input.value = '';
-};
-if (window.WebSocket) connect();
-"))
+                      Script(CHAT_JS))
 
     @rt("/api/chat", methods=["POST"])
     async def api_chat(dot_id: str = "", message: str = ""):
@@ -133,7 +132,6 @@ if (window.WebSocket) connect();
         except WebSocketDisconnect:
             return
 
-    # ---- memory ----
     @rt("/memory")
     def memory_page():
         return Titled("Memory", H1("Memory (federated)"),
@@ -163,7 +161,6 @@ if (window.WebSocket) connect();
         return P("Saved." if ok else "Empty content not saved.",
                  style="color:#4a4" if ok else "color:#e66")
 
-    # ---- models ----
     @rt("/models")
     def models_page():
         rows = "".join(
@@ -185,7 +182,6 @@ if (window.WebSocket) connect();
         found = models.scan_litert()
         return P("Scan complete: " + str(found) + " LiteRT model(s) found.")
 
-    # ---- dots / tasks / approvals / settings ----
     @rt("/dots")
     def dots():
         with SessionFactory() as s:
@@ -202,7 +198,8 @@ if (window.WebSocket) connect();
         import uuid
         with SessionFactory() as s:
             d = Dot(id=uuid.uuid4().hex, name=name, mission=mission)
-            s.add(d); s.commit()
+            s.add(d)
+            s.commit()
         return RedirectResponse("/dots", status_code=303)
 
     @rt("/tasks")
@@ -250,9 +247,10 @@ if (window.WebSocket) connect();
     def settings_page():
         active = get_profile().name
         rows = "".join(
-            f"<tr><td><b>{name}</b>{' (active)' if name == active else ''}</td>"
-            f"<td>{p.max_workers}</td><td>{p.poll_seconds}s</td>"
-            f"<td>{'yes' if p.allow_browser else 'no'}</td><td>{p.context}</td></tr>"
+            "<tr><td><b>" + name + "</b>" + (" (active)" if name == active else "") + "</td>"
+            + "<td>" + str(p.max_workers) + "</td><td>" + str(p.poll_seconds) + "s</td>"
+            + "<td>" + ("yes" if p.allow_browser else "no") + "</td>"
+            + "<td>" + str(p.context) + "</td></tr>"
             for name, p in PROFILES.items())
         return Titled("Settings", H1("Settings"),
                       H2("Device Profile"),
@@ -260,9 +258,9 @@ if (window.WebSocket) connect();
                                   Th("Browser"), Th("Context")), Tr(Td(raw(rows)))),
                       P("Set with NEXORA_PROFILE env var or: nexora start --profile <name>"),
                       H2("System"),
-                      P(f"Local-only: {settings.local_only}"),
-                      P(f"Auth enabled: {settings.auth_enabled}"),
-                      P(f"Host: {settings.host}:{settings.port}"),
+                      P("Local-only: " + str(settings.local_only)),
+                      P("Auth enabled: " + str(settings.auth_enabled)),
+                      P("Host: " + str(settings.host) + ":" + str(settings.port)),
                       Form(Button("Logout"), action="/auth/logout", method="post"))
 
     app = AuthMiddleware(app)
