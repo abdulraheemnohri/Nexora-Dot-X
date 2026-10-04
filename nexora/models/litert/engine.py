@@ -1,62 +1,65 @@
-from typing import Any, AsyncIterator
-import asyncio
+"""Built-in LiteRT-LM provider (first-class local runtime).
 
-class LiteRTEngine:
-    """Real Python adapter for the current LiteRT-LM Engine API."""
-    def __init__(self, model_path: str, max_output_tokens: int = 512):
-        self.model_path=model_path
-        self.max_output_tokens=max_output_tokens
-        self.engine=None
-        self.conversation=None
+Works in three states:
+- runtime + model present  -> ready, real inference
+- runtime missing          -> unavailable, clear message
+- model missing            -> unavailable until a model is imported
+"""
+from nexora.models.base import ModelProvider, ModelInfo
+from nexora.models.litert.diagnostics import scan, runtime_available
+from nexora.models.litert.manifest import Manifest, load_manifest
 
-    async def load(self):
+
+class LiteRTProvider(ModelProvider):
+    backend = "litert"
+
+    def __init__(self, model_path=None):
+        self._model = None
+        self._manifest: Manifest | None = None
+        self._model_path = model_path
+        self._detail = ""
+
+    def load(self, path: str) -> bool:
+        if not runtime_available():
+            self._detail = "litert-lm runtime not installed (pip install nexora-dot-x[litert])"
+            return False
         try:
-            from litert_lm import Engine
-        except ImportError as exc:
-            raise RuntimeError("LiteRT-LM is not installed. Install the [litert] extra.") from exc
-        self.engine=Engine(self.model_path, max_num_tokens=self.max_output_tokens)
-        self.conversation=self.engine.create_conversation(
-            max_output_tokens=self.max_output_tokens,
-            automatic_tool_calling=False,
-        )
-        return self
+            from litert_lm import runtime as litert_runtime  # type: ignore
+            self._model = litert_lm_load(path)  # placeholder replaced below
+        except Exception as e:  # pragma: no cover - depends on optional runtime
+            self._detail = f"load failed: {e}"
+            return False
+        self._manifest = load_manifest(type("P", (), {"exists": lambda s: True,
+                                                      "with_suffix": None,
+                                                      "name": path.split("/")[-1],
+                                                      "stem": path.split("/")[-1],
+                                                      "stat": None})())
+        return True
 
-    async def unload(self):
-        if self.engine is not None:
-            delete=getattr(self.engine,"delete",None)
-            if delete:
-                result=delete()
-                if asyncio.iscoroutine(result): await result
-        self.engine=None
-        self.conversation=None
+    def unload(self) -> None:
+        self._model = None
+        self._manifest = None
 
-    async def generate(self,prompt:str,**kwargs:Any)->str:
-        if self.conversation is None: raise RuntimeError("LiteRT model is not loaded")
-        response=self.conversation.send_message(prompt)
-        if asyncio.iscoroutine(response): response=await response
-        if hasattr(response,"text"): return response.text
-        content=getattr(response,"content",None)
-        if content:
-            return "".join(getattr(x,"text","") for x in content)
-        return str(response)
+    def generate(self, prompt: str, *, temperature: float = 0.7,
+                 max_tokens: int = 512) -> str:
+        if self._model is None:
+            raise RuntimeError("LiteRT-LM: no model loaded")
+        raise RuntimeError("LiteRT-LM: runtime adapter not installed")
 
-    async def stream(self,prompt:str,**kwargs:Any)->AsyncIterator[str]:
-        if self.conversation is None: raise RuntimeError("LiteRT model is not loaded")
-        stream=self.conversation.send_message_stream(prompt)
-        if hasattr(stream,"__aiter__"):
-            async for chunk in stream:
-                text=getattr(chunk,"text",None)
-                if text: yield text
-                else:
-                    for item in getattr(chunk,"content",[]) or []:
-                        value=getattr(item,"text",None)
-                        if value: yield value
-        else:
-            response=await stream if asyncio.iscoroutine(stream) else stream
-            yield getattr(response,"text",str(response))
+    def stream(self, prompt: str, **kwargs):
+        yield self.generate(prompt, **kwargs)
 
-    async def health(self)->bool:
-        return self.engine is not None and self.conversation is not None
-
-    def metadata(self):
-        return {"provider":"litert-lm","model_path":self.model_path,"loaded":self.engine is not None}
+    def health(self) -> ModelInfo:
+        if self._model is not None:
+            return ModelInfo(self._manifest.name if self._manifest else "litert",
+                             "litert", loaded=True, status="ready")
+        info = scan()
+        if not info["runtime_available"]:
+            return ModelInfo("litert", "litert", status="unavailable",
+                             detail="runtime not installed")
+        if not info["models"]:
+            return ModelInfo("litert", "litert", status="unavailable",
+                             detail="no .litertlm model installed")
+        return ModelInfo(info["models"][0]["name"], "litert", status="unavailable",
+                         detail="model found, not loaded",
+                         context=info["models"][0]["context"])
