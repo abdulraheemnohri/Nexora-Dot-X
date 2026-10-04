@@ -11,6 +11,7 @@ litert = typer.Typer(no_args_is_help=True)
 cli.add_typer(litert, name="litert")
 
 DEFAULT_LITERT_MODEL = "litert-community/gemma-4-E2B-it-litert-lm"
+DEFAULT_LITERT_FILE = "gemma-4-E2B-it.litertlm"
 
 
 @cli.command()
@@ -67,8 +68,11 @@ def litert_list():
     if not models:
         typer.echo("No LiteRT models found. Run: nexora litert install")
         return
-    for path in models:
-        typer.echo(path)
+    for m in models:
+        if isinstance(m, dict):
+            typer.echo(f"{m.get('name', '?')}  {m['path']}")
+        else:
+            typer.echo(str(m))
 
 
 @litert.command("install")
@@ -84,7 +88,7 @@ def litert_install(
     typer.echo(f"Downloading {repo} ...")
     try:
         r = download_default_model(str(settings.model_dir),
-                                   allow_network=allow_network, repo=repo)
+                                  allow_network=allow_network, repo=repo)
     except PermissionError as e:
         typer.secho(str(e), fg=typer.colors.YELLOW)
         typer.echo("Re-run with --allow-network to confirm the download.")
@@ -98,13 +102,85 @@ def litert_install(
         typer.echo(f"Installed: {r['path']}")
 
 
+@litert.command("import")
+def litert_import(
+    repo: str = typer.Option(DEFAULT_LITERT_MODEL, "--repo", "-r",
+                             help="HuggingFace repo to import from"),
+    file: str = typer.Option(DEFAULT_LITERT_FILE, "--file", "-f",
+                             help=".litertlm filename inside the repo"),
+    name: str = typer.Option(None, "--name", "-n",
+                             help="Local registry name for the model"),
+    allow_network: bool = typer.Option(False, "--allow-network", "-y",
+                                       help="Allow contacting HuggingFace"),
+):
+    """Import a model into the official litert-lm registry (litert-lm import)."""
+    from nexora.models.litert import cli_bridge
+    local_name = name or (file.rsplit(".", 1)[0] if "." in file else file)
+    try:
+        cli_bridge.require_network(allow_network)
+        args = cli_bridge.build_import_args(repo, file, local_name)
+        result = cli_bridge.run_cli(args, network=True)
+    except PermissionError as e:
+        typer.secho(str(e), fg=typer.colors.YELLOW)
+        typer.echo("Re-run with --allow-network to confirm.")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if result.returncode != 0:
+        typer.secho("litert-lm import failed: " + (result.stderr or result.stdout),
+                    fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"Imported {repo} as '{local_name}' into the litert-lm registry.")
+
+
 @litert.command("run")
 def litert_run(
-    prompt: str = typer.Argument(..., help="Prompt for the built-in model"),
+    prompt: str = typer.Argument(..., help="Prompt for the model"),
     model: str = typer.Option(None, "--model", "-m",
-                              help="Model name or path (default: built-in Gemma)"),
+                              help="Model name/path (default: first installed)"),
+    backend: str = typer.Option(None, "--backend", "-b",
+                                help="cpu | gpu (official litert-lm CLI)"),
+    speculative: bool = typer.Option(False, "--mtp/--no-mtp",
+                                     help="Multi-Token Prediction (litert-lm CLI)"),
+    attachment: str = typer.Option(None, "--attachment", "-a",
+                                   help="Image/audio file to attach (litert-lm CLI)"),
+    vision_backend: str = typer.Option(None, "--vision-backend",
+                                       help="Backend for image attachments"),
+    audio_backend: str = typer.Option(None, "--audio-backend",
+                                      help="Backend for audio attachments"),
+    use_cli: bool = typer.Option(False, "--cli",
+                                 help="Run via the official litert-lm CLI"),
 ):
-    """Run a prompt through the built-in LiteRT-LM model."""
+    """Run a one-shot prompt through LiteRT-LM."""
+    from nexora.models.litert import cli_bridge
+    if use_cli or backend or speculative or attachment or vision_backend or audio_backend:
+        scan_result = scan(str(settings.model_dir))
+        models = scan_result["models"]
+        ref = model
+        if not ref and models:
+            m0 = models[0]
+            ref = m0["path"] if isinstance(m0, dict) else str(m0)
+        if not ref:
+            typer.secho("No LiteRT model installed. Run: nexora litert install",
+                        fg=typer.colors.YELLOW)
+            raise typer.Exit(1)
+        try:
+            args = cli_bridge.build_run_args(
+                ref, prompt=prompt, backend=backend, speculative=speculative,
+                attachment=attachment, vision_backend=vision_backend,
+                audio_backend=audio_backend)
+            result = cli_bridge.run_cli(args)
+        except RuntimeError as e:
+            typer.secho(str(e), fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if result.returncode != 0:
+            typer.secho("litert-lm run failed: " + (result.stderr or result.stdout),
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.echo(result.stdout.strip())
+        return
+    # built-in Python runtime path
     from nexora.models.litert.engine import LiteRTProvider
     provider = LiteRTProvider()
     scan_result = scan(str(settings.model_dir))
@@ -113,11 +189,34 @@ def litert_run(
         typer.secho("No LiteRT model installed. Run: nexora litert install",
                     fg=typer.colors.YELLOW)
         raise typer.Exit(1)
-    path = model or models[0]["path"] if isinstance(models[0], dict) else models[0]
+    m0 = models[0]
+    path = model or (m0["path"] if isinstance(m0, dict) else str(m0))
     if not provider.load(str(path)):
-        typer.secho("LiteRT-LM unavailable: " + provider.health().detail, fg=typer.colors.RED)
+        typer.secho("LiteRT-LM unavailable: " + provider.health().detail,
+                    fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.echo(provider.generate(prompt))
+
+
+@litert.command("serve")
+def litert_serve(
+    host: str = typer.Option("127.0.0.1", "--host",
+                             help="Host to bind (official litert-lm server)"),
+    port: int = typer.Option(9379, "--port",
+                             help="Port (default 9379, OpenAI-compatible)"),
+    verbose: bool = typer.Option(False, "--verbose", help="Verbose logging"),
+):
+    """Start the official litert-lm OpenAI-compatible server (/v1 endpoints)."""
+    from nexora.models.litert import cli_bridge
+    args = cli_bridge.build_serve_args(host=host, port=port, verbose=verbose)
+    typer.echo(f"litert-lm OpenAI-compatible server on http://{host}:{port}/v1")
+    typer.echo("Endpoints: GET /v1/models, POST /v1/chat/completions (Ctrl+C to stop)")
+    try:
+        rc = cli_bridge.serve_cli(args)
+    except RuntimeError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    raise typer.Exit(rc)
 
 
 @litert.command("doctor")
@@ -127,11 +226,19 @@ def litert_doctor():
     typer.echo(f"Runtime installed: {result['runtime_available']}")
     if not result["runtime_available"]:
         typer.echo("  -> pip install nexora-dot-x[litert]")
+    from nexora.models.litert import cli_bridge
+    prefix = cli_bridge.resolve_cli()
+    typer.echo(f"litert-lm CLI: {' '.join(prefix) if prefix else 'not found'}")
+    if not prefix:
+        typer.echo("  -> pip install litert-lm  (or: uvx litert-lm)")
     typer.echo(f"Models found: {len(result['models'])}")
     if not result["models"]:
         typer.echo("  -> nexora litert install  (downloads the built-in Gemma model)")
-    for path in result["models"]:
-        typer.echo("  - " + str(path))
+    for m in result["models"]:
+        if isinstance(m, dict):
+            typer.echo("  - " + str(m.get("name", m["path"])))
+        else:
+            typer.echo("  - " + str(m))
 
 
 def main():

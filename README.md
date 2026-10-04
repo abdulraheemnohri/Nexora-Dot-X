@@ -46,11 +46,14 @@ Optional extras: pip install -e ".[litert,browser,dev]"
     nexora start --profile battery-saver   # low-power device profile
     nexora doctor                     # environment + provider diagnostics
     nexora chat "hi"                  # one-shot generation via mode
+
 l bus
     nexora simulate "research AI news" # dry-run: plan + policy, no side effects
     nexora litert install             # download the built-in Gemma model
-    nexora litert install --repo org/model -y   # another HF LiteRT model
+    nexora litert import -y           # import into the official litert-lm registry
     nexora litert run "hello"         # one-shot generation with LiteRT-LM
+    nexora litert run "hi" --cli --backend gpu --mtp   # official CLI options
+    nexora litert serve               # OpenAI-compatible server (port 9379)
     nexora litert scan                # find .litertlm models
     nexora litert doctor              # LiteRT-LM diagnostics
 
@@ -95,7 +98,8 @@ Background worker polls (only when tokens are configured):
 - Discord:  NEXORA_SECRET_DISCORD_TOKEN + NEXORA_DISCORD_CHANNEL_ID
 - Slack:    NEXORA_SECRET_SLACK_BOT_TOKEN + NEXORA_SLACK_CHANNEL_ID
 
-Incoming messages become tasks for the agent runtime.
+Incoming m
+essages become tasks for the agent runtime.
 
 ## CI
 
