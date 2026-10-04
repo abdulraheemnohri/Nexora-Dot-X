@@ -11,6 +11,9 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.12"]
+    permissions:
+      issues: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,3 +27,23 @@ jobs:
         run: ruff check . --output-format=github
       - name: Tests
         run: pytest -q
+      - name: Report failure as issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo '### Lint output'
+            ruff check . --output-format=full 2>&1 | tail -120
+            echo '### Test output'
+            pytest -q 2>&1 | tail -200
+          } > body.md
+          gh issue create --title "CI failed on ${GITHUB_SHA::7}" --body-file body.md
+      - name: Close stale CI failure issues on success
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh issue list --state open --json number --jq '.[].number' --search "CI failed"); do
+            gh issue close "$n" --reason completed
+          done
