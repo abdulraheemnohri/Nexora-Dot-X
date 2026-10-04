@@ -153,10 +153,22 @@ def create_app():
 
     @rt("/api/memory/search", methods=["POST"])
     def memory_search(query: str = ""):
-        lines = memory.search(query.strip(), limit=100)
-        if not lines:
+        hits = memory.search_detailed(query.strip(), limit=100)
+        if not hits:
             return P("No memories found.")
-        return Ul(*[Li(raw(item.replace("<", "&lt;"))) for item in lines])
+        items = []
+        for h in hits:
+            badge = ""
+            kind = h.get("kind")
+            if kind:
+                color = {"user": "#06c", "semantic": "#4a4",
+                        "project": "#a60", "episodic": "#555"}.get(kind, "#999")
+                badge = " <small style='color:" + color + "'>[" + str(kind) + "]</small>"
+            conf = h.get("confidence")
+            if conf is not None:
+                badge += " <small style='color:#999'>conf " + str(conf) + "</small>"
+            items.append("<li>" + str(h.get("content", "")).replace("<", "&lt;") + badge + "</li>")
+        return Ul(raw("".join(items)))
 
     @rt("/api/memory/remember", methods=["POST"])
     def memory_remember(content: str, kind: str = "semantic"):
@@ -274,13 +286,32 @@ def create_app():
 
     @rt("/approvals")
     def approval_page():
+        cards = []
+        for a in approvals.pending():
+            rows = "<div style='border:1px solid #ccc;padding:10px;margin:8px 0'>"
+            rows += "<h3>" + str(a.tool) + " · " + str(a.action) + "</h3>"
+            rows += "<p>" + str(a.reason or "") + "</p>"
+            rows += "<form action='/api/approvals/" + str(a.id) + "/approve' method='post' style='display:inline'>"
+            rows += "<button>Approve once</button></form> "
+            rows += "<form action='/api/approvals/" + str(a.id) + "/always' method='post' style='display:inline'>"
+            rows += "<button>Always allow this</button></form> "
+            rows += "<form action='/api/approvals/" + str(a.id) + "/reject' method='post' style='display:inline'>"
+            rows += "<button>Reject</button></form></div>"
+            cards.append(rows)
+        if not cards:
+            return Titled("Approvals", H1("Approval Center"), P("No pending approvals."))
         return Titled("Approvals", H1("Approval Center"),
-                      *(Div(H3(a.tool + " · " + a.action), P(a.reason), P(a.status))
-                        for a in approvals.pending()) or (P("No pending approvals."),))
+                      P("Approve once, always allow (policy rule), or reject:"),
+                      Div(raw("".join(cards))))
 
     @rt("/api/approvals/{approval_id}/approve", methods=["POST"])
     def approve(approval_id: str):
         approvals.decide(approval_id, True)
+        return RedirectResponse("/approvals", status_code=303)
+
+    @rt("/api/approvals/{approval_id}/always", methods=["POST"])
+    def always_allow(approval_id: str):
+        approvals.decide(approval_id, True, always=True)
         return RedirectResponse("/approvals", status_code=303)
 
     @rt("/api/approvals/{approval_id}/reject", methods=["POST"])
