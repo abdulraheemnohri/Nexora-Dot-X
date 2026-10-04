@@ -47,6 +47,10 @@ SAFE_PATTERNS = [
     r"^git (add|commit|status|log|diff|branch)",
 ]
 
+# Module-level always-allow store: user grants from the approval center are
+# shared across every PolicyEngine instance (System 1 is process-global).
+ALWAYS_ALLOWED: set = set()
+
 
 @dataclass
 class PolicyResult:
@@ -63,7 +67,8 @@ class PolicyEngine:
         self._dangerous = [re.compile(p) for p in DANGEROUS_PATTERNS]
         self._ask = [re.compile(p) for p in ASK_PATTERNS]
         self._safe = [re.compile(p) for p in SAFE_PATTERNS]
-        self.allowed_always: set = set()  # (tool, normalized action) approved "always"
+        # user grants live in the module-level ALWAYS_ALLOWED set
+        self.allowed_always = ALWAYS_ALLOWED
 
     def evaluate(self, tool: str, action: str, *, dry_run: bool = False) -> PolicyResult:
         action = (action or "").strip()
