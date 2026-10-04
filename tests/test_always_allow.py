@@ -1,5 +1,5 @@
 from nexora.control.approvals import ApprovalCenter
-from nexora.control.policy import PolicyEngine, Decision, ALWAYS_ALLOWED
+from nexora.control.policy import Decision, ALWAYS_ALLOWED
 from nexora.core.executor import Executor
 
 from nexora.database.engine import init_db
