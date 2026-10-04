@@ -2,6 +2,11 @@
 from nexora.database.models import Approval
 from nexora.database import repositories as repo
 
+# single shared policy engine so "always allow" grants apply everywhere
+from nexora.control.policy import PolicyEngine
+
+_policy = PolicyEngine()
+
 
 class ApprovalCenter:
 
@@ -19,8 +24,11 @@ class ApprovalCenter:
         a.status = "approved"
         repo.update_fields(a, status="approved")
         if always:
+            key = (" ".join((a.action or "").split()))
+            _policy.allowed_always.add((a.tool, key))
             from nexora.control.audit import audit
-            audit("user", tool=a.tool, action="approve_always", decision="ALLOW")
+            audit("user", tool=a.tool, action=a.action, decision="ALLOW",
+                  outcome="approved as always-allow rule")
         return a
 
     def reject(self, approval_id: str) -> Approval | None:

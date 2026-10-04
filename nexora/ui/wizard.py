@@ -20,13 +20,19 @@ def wizard_page(step: int = 1):
         3: ("Model setup",
             P("Model dir: " + str(settings.model_dir)),
             P("Drop .litertlm models into models/litert/, or run: "
-              "pip install nexora-dot-x[litert]")),
+              "pip install nexora-dot-x[litert]"),
+            P(A("Open Model Management", href="/models", cls="btn"))),
         4: ("Workspace",
             P("Workspaces: " + str(settings.workspace_dir)),
             P("Each Dot gets an isolated workspace directory.")),
         5: ("Create first Dot", _first_dot_form()),
         6: ("Finish",
-            P("Setup complete. Head to the Dashboard and queue your first task.")),
+            P("Setup complete. Explore the control center:"),
+            P(A("Chat", href="/chat"), " · ", A("Memory", href="/memory"),
+              " · ", A("Models", href="/models"), " · ", A("Skills", href="/skills"),
+              " · ", A("Approvals", href="/approvals"), " · ", A("Settings", href="/settings")),
+            P("Self-grown skills await your approval in /skills; "
+              "dangerous commands are always blocked by the policy engine.")),
     }
     title, *body = steps.get(step, steps[1])
     nav = Div(*[A(str(i), href="/wizard?step=" + str(i),

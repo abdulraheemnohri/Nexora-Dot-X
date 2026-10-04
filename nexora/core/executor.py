@@ -37,3 +37,13 @@ class Executor:
             return StepOutcome(True, f"step '{step.get('kind', tool)}' completed (no tool side effects configured)")
         result = self.tools.run(tool, action)
         return StepOutcome(result.get("ok", True), result.get("output", ""))
+
+    def resume(self, approval_id: str) -> StepOutcome:
+        """Continue execution after a user decision on a pending approval."""
+        from nexora.database import repositories as repo
+        from nexora.database.models import Approval
+        a = repo.get_by_id(Approval, approval_id)
+        if a is None or a.status != "approved":
+            return StepOutcome(False, "approval not approved")
+        step = {"tool": a.tool, "action": a.action}
+        return self.execute(step, dry_run=False)
