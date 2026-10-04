@@ -72,13 +72,15 @@ class PolicyEngine:
 
     def evaluate(self, tool: str, action: str, *, dry_run: bool = False) -> PolicyResult:
         action = (action or "").strip()
-        key = (tool, " ".join(action.split()))
-        if key in self.allowed_always:
-            return PolicyResult(Decision.ALLOW, Risk.MEDIUM, "previously approved as always")
+        # hard blocks come FIRST: no always-allow grant can ever whitelist a
+        # dangerous command
         for rx in self._dangerous:
             if rx.search(action):
                 return PolicyResult(Decision.BLOCK, Risk.CRITICAL,
                                     "matched dangerous rule " + rx.pattern, rx.pattern)
+        key = (tool, " ".join(action.split()))
+        if key in self.allowed_always:
+            return PolicyResult(Decision.ALLOW, Risk.MEDIUM, "previously approved as always")
         for rx in self._safe:
             if rx.match(action):
                 return PolicyResult(Decision.ALLOW, Risk.SAFE, "safe-listed command", rx.pattern)
