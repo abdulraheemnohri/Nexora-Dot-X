@@ -1,5 +1,3 @@
-import json
-
 from nexora.skills.manager import SkillManager
 
 
