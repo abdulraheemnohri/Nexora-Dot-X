@@ -1,45 +1,45 @@
-"""Persistent scheduler for recurring and future tasks."""
+"""Persistent scheduler for recurring and future tasks.
+
+Schedules survive restarts (SQLite-backed). Due jobs create tasks that any
+online Dot with matching id can pick up.
+"""
 import time
-from nexora.database.models import Task
-from nexora.database import repositories as repo
+from sqlalchemy import select
+from nexora.database.engine import get_session_factory
+from nexora.database.schedule_model import ScheduleDB
 from nexora.core.task_engine import TaskEngine
 
 
-class Schedule:
-    def __init__(self, job_id: str, goal: str, every_seconds: float,
-                 dot_id=None, last_run: float = 0.0, enabled: bool = True):
-        self.id = job_id
-        self.goal = goal
-        self.every = every_seconds
-        self.dot_id = dot_id
-        self.last_run = last_run
-        self.enabled = enabled
-
-
 class Scheduler:
-    def __init__(self):
-        self._jobs: dict[str, Schedule] = {}
-
-    def add(self, job_id: str, goal: str, every_seconds: float, dot_id=None) -> Schedule:
-        job = Schedule(job_id, goal, every_seconds, dot_id)
-        self._jobs[job_id] = job
-        return job
+    def add(self, goal: str, every_seconds: float, dot_id=None) -> str:
+        with get_session_factory()() as s:
+            row = ScheduleDB(goal=goal, every_seconds=every_seconds, dot_id=dot_id)
+            s.add(row)
+            s.commit()
+            return row.id
 
     def remove(self, job_id: str) -> bool:
-        return self._jobs.pop(job_id, None) is not None
+        with get_session_factory()() as s:
+            row = s.get(ScheduleDB, job_id)
+            if row is None:
+                return False
+            s.delete(row)
+            s.commit()
+            return True
 
     def list(self) -> list:
-        return list(self._jobs.values())
-
-    def due(self) -> list:
-        now = time.time()
-        return [j for j in self._jobs.values() if j.enabled and now - j.last_run >= j.every]
+        with get_session_factory()() as s:
+            return list(s.scalars(select(ScheduleDB).order_by(ScheduleDB.created_at)))
 
     def run_due(self) -> list:
+        now = time.time()
         engine = TaskEngine()
         created = []
-        for job in self.due():
-            t = engine.create(job.goal, dot_id=job.dot_id)
-            job.last_run = time.time()
-            created.append(t)
+        with get_session_factory()() as s:
+            for row in s.scalars(select(ScheduleDB).where(ScheduleDB.enabled)):
+                if now - row.last_run >= row.every_seconds:
+                    t = engine.create(row.goal, dot_id=row.dot_id)
+                    row.last_run = now
+                    created.append(t)
+            s.commit()
         return created

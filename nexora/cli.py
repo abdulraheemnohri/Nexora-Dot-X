@@ -29,6 +29,7 @@ def doctor():
     import platform
     from nexora.database.engine import init_db
     from nexora.models.litert.diagnostics import doctor as litert_doctor
+    from nexora.models.router import ModelRouter
     typer.echo(f"Python {platform.python_version()} on {platform.system()} - OK")
     try:
         init_db()
@@ -37,6 +38,37 @@ def doctor():
         typer.echo(f"SQLite database - FAIL: {e}")
     for name, result in litert_doctor():
         typer.echo(f"LiteRT: {name} - {result}")
+    for m in ModelRouter().available():
+        typer.echo(f"Provider {m.name} ({m.backend}) - {m.status}: {m.detail}")
+
+
+@cli.command()
+def chat(goal: str):
+    """One-shot generation via the model bus."""
+    from nexora.models.router import ModelRouter
+    try:
+        typer.echo(ModelRouter().generate(goal))
+    except Exception as e:
+        typer.echo(f"error: {e}")
+
+
+@cli.command()
+def simulate(goal: str):
+    """Dry-run a task: plan + policy-check steps without side effects."""
+    import asyncio
+    from types import SimpleNamespace
+    from nexora.database.engine import init_db
+    from nexora.core.task_engine import TaskEngine
+    from nexora.core.agent import Agent
+    from nexora.core.executor import Executor
+
+    init_db()
+    dot = SimpleNamespace(id="simulate", name="Simulator")
+    t = TaskEngine().create(goal)
+    asyncio.run(Agent(dot, executor=Executor(tool_registry=None)).run_task(t))
+    t = TaskEngine().get(t.id)
+    typer.echo(f"status: {t.status}")
+    typer.echo(t.result or t.error)
 
 
 @litert.command("list")
