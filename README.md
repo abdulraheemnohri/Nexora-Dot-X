@@ -45,8 +45,12 @@ Optional extras: pip install -e ".[litert,browser,dev]"
     nexora start                      # server + background worker
     nexora start --profile battery-saver   # low-power device profile
     nexora doctor                     # environment + provider diagnostics
-    nexora chat "hi"                  # one-shot generation via model bus
+    nexora chat "hi"                  # one-shot generation via mode
+l bus
     nexora simulate "research AI news" # dry-run: plan + policy, no side effects
+    nexora litert install             # download the built-in Gemma model
+    nexora litert install --repo org/model -y   # another HF LiteRT model
+    nexora litert run "hello"         # one-shot generation with LiteRT-LM
     nexora litert scan                # find .litertlm models
     nexora litert doctor              # LiteRT-LM diagnostics
 

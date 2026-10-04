@@ -37,7 +37,8 @@ def download_default_model(model_dir, allow_network=False,
                            repo=DEFAULT_MODEL_REPO, file=DEFAULT_MODEL_FILE):
     """Download the built-in Gemma model into the LiteRT model dir."""
     url = HF_URL.format(repo=repo, file=file)
-    dest = Path(model_dir) / "litert" / f"{repo.split('/')[-1]}.litertlm"
+    name = repo.split("/")[-1]
+    dest = Path(model_dir) / "litert" / (name + ".litertlm")
     if dest.exists() and dest.stat().st_size > 0:
         return {"ok": True, "path": str(dest), "cached": True}
     path = download(url, dest, allow_network=allow_network)
@@ -46,7 +47,8 @@ def download_default_model(model_dir, allow_network=False,
 
 def ensure_default_model(model_dir, allow_network=False):
     """Return path to the built-in model, downloading only if missing."""
-    dest = Path(model_dir) / "litert" / f"{DEFAULT_MODEL_REPO.split('/')[-1]}.litertlm"
+    name = DEFAULT_MODEL_REPO.split("/")[-1]
+    dest = Path(model_dir) / "litert" / (name + ".litertlm")
     if dest.exists() and dest.stat().st_size > 0:
         return {"ok": True, "path": str(dest), "cached": True}
     return download_default_model(model_dir, allow_network=allow_network)
