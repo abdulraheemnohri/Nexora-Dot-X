@@ -46,8 +46,7 @@ def restore_backup(archive_path: str, *, restore_db: bool = True) -> dict:
                 target = settings.data_dir / "nexora.db"
                 with z.open(info) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
-                re
-stored.append(str(target))
+                restored.append(str(target))
             elif info.filename.startswith(("skills/", "workspaces/")):
                 dest = settings.data_dir.parent / info.filename
                 dest.parent.mkdir(parents=True, exist_ok=True)

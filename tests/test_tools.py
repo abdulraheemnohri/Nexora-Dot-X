@@ -1,9 +1,8 @@
 from pathlib import Path
+
 from nexora.database.engine import init_db
 from nexora.tools.registry import ToolRegistry
 from nexora.tools import terminal as terminal_tool
-from nexora.tools import filesystem as fs_tool
-from nexora.tools import http as http_tool
 
 
 def test_terminal_blocked(tmp_path: Path):

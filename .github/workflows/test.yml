@@ -34,9 +34,9 @@ jobs:
         run: |
           {
             echo '### Lint output'
-            ruff check . --output-format=full 2>&1 | tail -120
+            ruff check . --output-format=full 2>&1 | head -c 50000
             echo '### Test output'
-            pytest -q 2>&1 | tail -200
+            pytest -q 2>&1 | tail -300
           } > body.md
           gh issue create --title "CI failed on ${GITHUB_SHA::7}" --body-file body.md
       - name: Close stale CI failure issues on success
