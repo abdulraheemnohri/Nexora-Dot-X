@@ -8,7 +8,7 @@ from nexora.database import repositories as repo
 
 class EventBus:
     def __init__(self):
-        self._subs: dict[str, list[Callable]] = defaultdict(list)
+        self._subs = defaultdict(list)
 
     def subscribe(self, kind: str, fn: Callable):
         self._subs[kind].append(fn)
@@ -21,6 +21,12 @@ class EventBus:
                 pass
         try:
             repo.add_obj(Event(kind=kind, payload=json.dumps(payload, ensure_ascii=False)))
+        except Exception:
+            pass
+        # fan-out to WebSocket clients
+        try:
+            from nexora.core.ws import hub
+            hub.broadcast(kind, payload)
         except Exception:
             pass
 
