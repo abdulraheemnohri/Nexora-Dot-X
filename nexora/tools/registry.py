@@ -35,6 +35,11 @@ class ToolRegistry:
         if handler is None:
             return {"ok": True, "output": f"{tool_id}: {action} (no handler bound)"}
         try:
-            return {"ok": True, "output": str(handler(action))}
+            result = handler(action)
         except Exception as e:
             return {"ok": False, "output": f"{tool_id} error: {e}"}
+        # handlers return their own {ok, output} verdicts (policy gates live
+        # inside tools); never override a handler's decision.
+        if isinstance(result, dict):
+            return result
+        return {"ok": True, "output": str(result)}

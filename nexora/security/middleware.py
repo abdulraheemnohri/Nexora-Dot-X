@@ -2,8 +2,8 @@
 
 Rules:
   - /login, static assets and the WebSocket handshake stay open
-  - when enabled, API routes require Bearer token OR a valid session cookie
-  - pages require a valid session cookie (redirect to /login)
+  - when enabled, every route requires a Bearer token OR a valid session
+    cookie; pages without either redirect to /login
 Auth disabled => middleware is a no-op.
 """
 import os
@@ -35,10 +35,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if token and self.auth.valid_session(token):
             return await call_next(request)
 
-        if path.startswith("/api/"):
-            bearer = (request.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+        bearer = (request.headers.get("authorization") or "")
+        if bearer.startswith("Bearer "):
+            bearer = bearer.removeprefix("Bearer ").strip()
             if bearer and self.auth.valid_api_token(bearer):
                 return await call_next(request)
+
+        if path.startswith("/api/"):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         return RedirectResponse("/login", status_code=303)
