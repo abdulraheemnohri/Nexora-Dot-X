@@ -1,18 +1,36 @@
-# LiteRT-LM
+# LiteRT-LM (built-in model runtime)
 
-LiteRT-LM is the built-in, first-class local runtime.
+LiteRT-LM is Nexora's first-class local model backend. The built-in default
+model is **litert-community/gemma-4-E2B-it-litert-lm** - a small, on-device
+Gemma model in the .litertlm format (private inference, no network needed
+after download).
 
-- Models are .litertlm files under NEXORA_LITERT_DIR (default models/litert/)
-- Any compatible model works via its manifest (Gemma, Qwen, FunctionGemma, ...)
-- The runtime package is optional: pip install nexora-dot-x[litert]
-- Without the package, Nexora stays fully functional; generation is simply
-  unavailable and diagnostics explain exactly why.
+## CLI
 
-CLI:
+    nexora litert list                  # show installed .litertlm models
+    nexora litert install               # download the built-in Gemma model
+    nexora litert install -y            # confirm the network download explicitly
+    nexora litert install -r <repo>     # any other LiteRT HF repo
+    nexora litert run "hello!"          # one-shot generation with the built-in model
+    nexora litert doctor                # runtime + model diagnostics
 
-    nexora litert scan      # list found .litertlm files
-    nexora litert list
-    nexora litert doctor    # runtime / directory / model / inference checks
+## Local-only guard
 
-The provider exposes the common Model Bus interface: load, unload, generate,
-stream, health, metadata, context_info.
+Downloads refuse to touch the network by default. Either pass
+`--allow-network` explicitly or set `NEXORA_LOCAL_ONLY=false`. Already
+downloaded models never re-download.
+
+## Install path
+
+Models land in `models/litert/gemma-4-E2B-it-litert-lm.litertlm`. Drop any
+other `.litertlm` file into `models/` (or `models/litert/`) and
+`nexora litert list` will pick it up automatically.
+
+## Runtime
+
+The inference engine itself is the optional `litert-lm` package:
+
+    pip install nexora-dot-x[litert]
+
+Without it, `nexora litert doctor` reports the runtime as missing and the
+model bus falls back to GGUF / Ollama providers.
