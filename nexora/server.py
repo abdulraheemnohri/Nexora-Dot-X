@@ -13,6 +13,7 @@ from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
 from nexora.security.auth import AuthManager
 from nexora.security.middleware import COOKIE, AuthMiddleware
+from nexora.skills.manager import SkillManager
 
 CHAT_JS = r"""const log = document.getElementById('chat-log');
 let dotId = '';
@@ -60,6 +61,7 @@ def create_app():
     memory = MemoryService()
     models = ModelService()
     auth = AuthManager()
+    skills = SkillManager()
 
     @rt("/")
     def home():
@@ -69,6 +71,7 @@ def create_app():
                       P("Local-first autonomous AI control center"),
                       Div(A("Dots", href="/dots"), " · ", A("Chat", href="/chat"),
                           " · ", A("Memory", href="/memory"), " · ", A("Models", href="/models"),
+                          " · ", A("Skills", href="/skills"),
                           " · ", A("Tasks", href="/tasks"), " · ", A("Approvals", href="/approvals"),
                           " · ", A("Settings", href="/settings")),
                       P("Local-only: " + str(settings.local_only) + " · Profile: " + get_profile().name
@@ -181,6 +184,48 @@ def create_app():
     def models_scan():
         found = models.scan_litert()
         return P("Scan complete: " + str(found) + " LiteRT model(s) found.")
+
+    # ---- skills ------------------------------------------------------------
+    @rt("/skills")
+    def skills_page():
+        pending = skills.pending()
+        active = skills.scan()
+        pend_rows = "".join(
+            "<tr><td>" + s.get("name", "?") + "</td><td>"
+            + str(s.get("description", "")) + "</td>"
+            + '<td><form hx_post="/api/skills/approve" hx_target="#skills-result" '
+            + 'hx_swap="innerHTML"><input type="hidden" name="name" value="'
+            + s.get("name", "") + '"><button>Approve</button></form></td>'
+            + '<td><form hx_post="/api/skills/reject" hx_target="#skills-result" '
+            + 'hx_swap="innerHTML"><input type="hidden" name="name" value="'
+            + s.get("name", "") + '"><button>Reject</button></form></td></tr>'
+            for s in pending)
+        act_rows = "".join(
+            "<tr><td>" + s.get("name", "?") + "</td><td>"
+            + str(s.get("description", "")) + "</td><td>active</td><td></td></tr>"
+            for s in active)
+        return Titled("Skills", H1("Skills"),
+                      H2("Pending approval"),
+                      (Table(Thead(Th("Name"), Th("Description"), Th(""), Th("")),
+                             Tr(Td(raw(pend_rows)))) if pending else P("No skills awaiting approval.")),
+                      H2("Active skills"),
+                      (Table(Thead(Th("Name"), Th("Description"), Th("Status"), Th("")),
+                             Tr(Td(raw(act_rows)))) if active else P("No active skills yet.")),
+                      P("Self-grown skills require explicit user approval - the AI "
+                        "cannot activate them (System 1)."),
+                      Div(id="skills-result"))
+
+    @rt("/api/skills/approve", methods=["POST"])
+    def skill_approve(name: str):
+        r = skills.approve(name)
+        return P("Skill approved: " + name if r["ok"] else "Error: " + r.get("error", ""),
+                 style="color:#4a4" if r["ok"] else "color:#e66")
+
+    @rt("/api/skills/reject", methods=["POST"])
+    def skill_reject(name: str):
+        r = skills.reject(name)
+        return P("Skill rejected: " + name if r["ok"] else "Error: " + r.get("error", ""),
+                 style="color:#e66" if r["ok"] else "color:#e66")
 
     @rt("/dots")
     def dots():
