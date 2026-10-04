@@ -1,0 +1,1 @@
+document.addEventListener("htmx:afterSwap",()=>console.log("Nexora UI ready"));
