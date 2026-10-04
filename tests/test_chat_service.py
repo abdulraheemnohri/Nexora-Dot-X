@@ -1,6 +1,5 @@
 from pathlib import Path
 import pytest
-from types import SimpleNamespace
 
 from nexora.database.engine import init_db
 from nexora.core.chat_service import ChatService

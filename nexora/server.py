@@ -153,7 +153,7 @@ def create_app():
         lines = memory.search(query.strip(), limit=100)
         if not lines:
             return P("No memories found.")
-        return Ul(*[Li(raw(l.replace("<", "&lt;"))) for l in lines])
+        return Ul(*[Li(raw(item.replace("<", "&lt;"))) for item in lines])
 
     @rt("/api/memory/remember", methods=["POST"])
     def memory_remember(content: str, kind: str = "semantic"):
@@ -212,7 +212,7 @@ def create_app():
 
     @rt("/api/tasks", methods=["POST"])
     async def create_task(dot_id: str, goal: str):
-        task = await runtime_submit(dot_id, goal)
+        await runtime_submit(dot_id, goal)
         return RedirectResponse("/tasks", status_code=303)
 
     async def runtime_submit(dot_id, goal):
