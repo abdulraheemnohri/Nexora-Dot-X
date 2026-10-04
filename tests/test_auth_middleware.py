@@ -2,11 +2,10 @@ import os
 
 from starlette.testclient import TestClient
 
-from nexora.security.middleware import AuthMiddleware, COOKIE
-from nexora.security.auth import AuthManager
+from nexora.security.middleware import AuthMiddleware
 
 
-def _app(extra_routes=True):
+def _app():
     from fasthtml.common import fast_app
     app, rt = fast_app()
 
@@ -18,8 +17,7 @@ def _app(extra_routes=True):
     def login():
         return {"page": "login"}
 
-    app = AuthMiddleware(app)
-    return app
+    return AuthMiddleware(app)
 
 
 def test_open_when_disabled():
