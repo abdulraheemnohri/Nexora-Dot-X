@@ -1,17 +1,57 @@
-from enum import StrEnum
-from dataclasses import dataclass, field
-from datetime import datetime
-import uuid
+"""Persistent task engine with the full Nexora task lifecycle."""
+import enum
+import json
+from nexora.database.models import Task
+from nexora.database import repositories as repo
+from nexora.core.events import bus
 
-class TaskStatus(StrEnum):
-    CREATED="CREATED"; QUEUED="QUEUED"; PLANNING="PLANNING"; RUNNING="RUNNING"
-    WAITING_APPROVAL="WAITING_APPROVAL"; PAUSED="PAUSED"; RETRYING="RETRYING"
-    COMPLETED="COMPLETED"; FAILED="FAILED"; CANCELLED="CANCELLED"
 
-@dataclass
-class Task:
-    goal: str
-    dot_id: str
-    id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    status: TaskStatus = TaskStatus.CREATED
-    created_at: datetime = field(default_factory=datetime.utcnow)
+class TaskStatus(str, enum.Enum):
+    CREATED = "CREATED"
+    QUEUED = "QUEUED"
+    PLANNING = "PLANNING"
+    RUNNING = "RUNNING"
+    WAITING_APPROVAL = "WAITING_APPROVAL"
+    PAUSED = "PAUSED"
+    RETRYING = "RETRYING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class TaskEngine:
+    def create(self, goal: str, dot_id: str | None = None, priority: int = 1) -> Task:
+        t = Task(goal=goal, dot_id=dot_id, priority=priority, status=TaskStatus.CREATED.value)
+        t = repo.add_obj(t)
+        bus.publish("task.created", {"id": t.id, "goal": goal, "dot_id": dot_id})
+        return t
+
+    def list(self, status: str | None = None, limit: int = 200) -> list:
+        if status:
+            return repo.query(Task, Task.status == status, limit=limit)
+        return repo.get_all(Task, limit=limit, order_desc="created_at")
+
+    def get(self, task_id: str) -> Task | None:
+        return repo.get_by_id(Task, task_id)
+
+    def set_status(self, task_id: str, status: str, result: str = "", error: str = "") -> Task | None:
+        t = repo.get_by_id(Task, task_id)
+        if t is None:
+            return None
+        t = repo.update_fields(t, status=status, result=result or t.result, error=error or t.error)
+        bus.publish("task.status", {"id": task_id, "status": status})
+        return t
+
+    def set_plan(self, task_id: str, steps: list) -> Task | None:
+        t = repo.get_by_id(Task, task_id)
+        if t is None:
+            return None
+        return repo.update_fields(t, plan=json.dumps(steps, ensure_ascii=False))
+
+    def get_plan(self, task: Task) -> list:
+        if not task.plan:
+            return []
+        try:
+            return json.loads(task.plan)
+        except json.JSONDecodeError:
+            return []

@@ -1,18 +1,39 @@
+"""Step executor: routes planned steps through System 1 and the tool registry."""
 from nexora.control.policy import PolicyEngine, Decision
 from nexora.control.approvals import ApprovalCenter
-from nexora.tools.registry import ToolRegistry
+from nexora.control.audit import audit
+from nexora.core.events import bus
 
-class System1Executor:
-    def __init__(self, registry=None, policy=None, approvals=None):
-        self.registry=registry or ToolRegistry()
-        self.policy=policy or PolicyEngine()
-        self.approvals=approvals or ApprovalCenter()
 
-    def request(self, tool, action, reason=""):
-        d=self.policy.evaluate(tool,action)
-        if d.decision is Decision.BLOCK: return {"decision":"BLOCK","reason":d.reason}
-        if d.decision is Decision.ASK:
-            a=self.approvals.request(tool,action,reason or d.reason)
-            return {"decision":"ASK","reason":d.reason,"approval_id":a.id}
-        return {"decision":"ALLOW","reason":d.reason}
+class StepOutcome:
+    def __init__(self, ok: bool, output: str = "", pending_approval=None):
+        self.ok = ok
+        self.output = output
+        self.pending_approval = pending_approval
 
+
+class Executor:
+    def __init__(self, tool_registry=None):
+        self.policy = PolicyEngine()
+        self.approvals = ApprovalCenter()
+        self.tools = tool_registry
+
+    def execute(self, step: dict, *, bot_id=None, task_id=None, dry_run=False) -> StepOutcome:
+        tool = step.get("tool") or step.get("kind", "work")
+        action = step.get("action") or step.get("description", "")
+        decision = self.policy.evaluate(tool, action, dry_run=dry_run)
+        audit("agent", bot_id=bot_id, task_id=task_id, tool=tool,
+              action=action, decision=decision.decision.value,
+              outcome=decision.reason)
+        if decision.decision is Decision.BLOCK:
+            return StepOutcome(False, f"BLOCKED by policy: {decision.reason}")
+        if decision.decision is Decision.ASK:
+            a = self.approvals.request(tool, action, decision.reason, decision.risk.value)
+            bus.publish("approval.requested", {"id": a.id, "tool": tool, "action": action})
+            return StepOutcome(False, "waiting for user approval", pending_approval=a.id)
+        if dry_run:
+            return StepOutcome(True, f"[dry-run] would execute {tool}: {action}")
+        if self.tools is None:
+            return StepOutcome(True, f"step '{step.get('kind', tool)}' completed (no tool side effects configured)")
+        result = self.tools.run(tool, action)
+        return StepOutcome(result.get("ok", True), result.get("output", ""))

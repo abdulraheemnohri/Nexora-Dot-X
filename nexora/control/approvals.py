@@ -1,31 +1,30 @@
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import StrEnum
-import uuid
+"""Approval center: pending human-in-the-loop decisions."""
+from nexora.database.models import Approval
+from nexora.database import repositories as repo
 
-class ApprovalStatus(StrEnum):
-    PENDING="PENDING"; APPROVED="APPROVED"; REJECTED="REJECTED"; CANCELLED="CANCELLED"
-
-@dataclass
-class Approval:
-    tool: str
-    action: str
-    reason: str
-    risk: str = "medium"
-    params: dict = field(default_factory=dict)
-    id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    status: ApprovalStatus = ApprovalStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.utcnow)
 
 class ApprovalCenter:
-    def __init__(self):
-        self.items: dict[str, Approval] = {}
-    def request(self, tool, action, reason, risk="medium", params=None):
-        item=Approval(tool,action,reason,risk,params or {})
-        self.items[item.id]=item
-        return item
-    def decide(self, approval_id, approved: bool):
-        item=self.items[approval_id]
-        item.status=ApprovalStatus.APPROVED if approved else ApprovalStatus.REJECTED
-        return item
-    def pending(self): return [x for x in self.items.values() if x.status==ApprovalStatus.PENDING]
+
+    def request(self, tool: str, action: str, reason: str = "", risk: str = "medium") -> Approval:
+        a = Approval(tool=tool, action=action, reason=reason, risk=risk)
+        return repo.add_obj(a)
+
+    def pending(self) -> list:
+        return repo.query(Approval, Approval.status == "pending")
+
+    def approve(self, approval_id: str, always: bool = False) -> Approval | None:
+        a = repo.get_by_id(Approval, approval_id)
+        if a is None:
+            return None
+        a.status = "approved"
+        repo.update_fields(a, status="approved")
+        if always:
+            from nexora.control.audit import audit
+            audit("user", tool=a.tool, action="approve_always", decision="ALLOW")
+        return a
+
+    def reject(self, approval_id: str) -> Approval | None:
+        a = repo.get_by_id(Approval, approval_id)
+        if a is None:
+            return None
+        return repo.update_fields(a, status="rejected")
