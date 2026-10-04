@@ -1,23 +1,23 @@
 # Authentication
 
-By default Nexora runs local single-user with auth disabled
-(NEXORA_AUTH_ENABLED=false) - it binds to 127.0.0.1 only.
+Optional. Enable with `NEXORA_AUTH_ENABLED=true`.
 
-To enable auth:
+## Password
+```bash
+python -m nexora.security set-password    # sets NEXORA_SECRET_PASSWORD_HASH
+```
+Or generate a hash with `AuthManager.hash_password()` and export it yourself.
 
-1. Generate a password hash:
+## Behavior when enabled
+- Pages require a session cookie (`/login` form, 12h TTL)
+- API routes accept `Authorization: Bearer <token>` where token =
+  `NEXORA_SECRET_API_TOKEN`; otherwise 401
+- `/login` and static assets stay open
 
-       nexora password
+## API example
+```bash
+curl -H "Authorization: Bearer $NEXORA_SECRET_API_TOKEN" \
+  http://127.0.0.1:8000/api/status
+```
 
-2. Put it in .env:
-
-       NEXORA_AUTH_ENABLED=true
-       NEXORA_SECRET_PASSWORD_HASH=<output>
-
-3. Restart; all web sessions now require login at /login.
-
-API tokens: set NEXORA_SECRET_API_TOKEN and send
-"Authorization: Bearer <token>" on API calls.
-
-Passwords are PBKDF2-SHA256 hashed (100k iterations, per-password salt).
-Session tokens are random, httpOnly cookies, 12h TTL.
+Disabled (default): everything stays open for local single-user use.

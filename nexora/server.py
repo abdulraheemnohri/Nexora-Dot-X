@@ -7,8 +7,12 @@ from nexora.database.models import Dot
 from nexora.core.task_service import TaskService
 from nexora.core.planner import Planner
 from nexora.core.chat_service import ChatService
+from nexora.core.memory_service import MemoryService
+from nexora.core.model_service import ModelService
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
+from nexora.security.auth import AuthManager
+from nexora.security.middleware import COOKIE, AuthMiddleware
 
 
 def create_app():
@@ -17,37 +21,99 @@ def create_app():
     planner = Planner()
     approvals = ApprovalCenter()
     chat = ChatService()
+    memory = MemoryService()
+    models = ModelService()
+    auth = AuthManager()
 
     @rt("/")
     def home():
+        ready = models.ready_backend()
         return Titled("Nexora Dot X",
                       H1("Nexora Dot X"),
                       P("Local-first autonomous AI control center"),
                       Div(A("Dots", href="/dots"), " · ", A("Chat", href="/chat"),
+                          " · ", A("Memory", href="/memory"), " · ", A("Models", href="/models"),
                           " · ", A("Tasks", href="/tasks"), " · ", A("Approvals", href="/approvals"),
                           " · ", A("Settings", href="/settings")),
-                      P(f"Local-only: {settings.local_only} · Profile: {get_profile().name}"))
+                      P(f"Local-only: {settings.local_only} · Profile: {get_profile().name} · "
+                        f"Model: {ready or 'none ready'}"))
 
     @rt("/api/status")
     def status():
         return {"status": "ready", "local_only": settings.local_only,
-                "database": "sqlite", "profile": get_profile().name}
+                "database": "sqlite", "profile": get_profile().name,
+                "model": models.ready_backend()}
 
+    # ---- auth ----
+    @rt("/login")
+    def login_page():
+        return Titled("Login", H1("Nexora Login"),
+                      Form(Input(name="password", type="password", placeholder="Password", required=True),
+                           Button("Login"), action="/auth/login", method="post"),
+                      P("Auth is enabled (NEXORA_AUTH_ENABLED=true)."))
+
+    @rt("/auth/login", methods=["POST"])
+    def do_login(password: str):
+        token = auth.login(password)
+        if token is None:
+            return RedirectResponse("/login?error=1", status_code=303)
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(COOKIE, token, httponly=True, samesite="lax")
+        return resp
+
+    @rt("/auth/logout", methods=["POST"])
+    def do_logout():
+        resp = RedirectResponse("/login", status_code=303)
+        resp.delete_cookie(COOKIE)
+        return resp
+
+    # ---- chat ----
     @rt("/chat")
     def chat_page():
         with SessionFactory() as s:
             items = list(s.query(Dot).filter_by(enabled=True).order_by(Dot.created_at.desc()))
         options = [Option(d.name, value=d.id) for d in items] or [Option("No enabled Dots", value="")]
         return Titled("Chat", H1("Chat"),
-                      Select(*options, name="dot_id", id="chat-dot"),
-                      Div(id="chat-log",
-                          hx_ext="ws", ws_connect="/ws/chat",
-                          hx_swap="beforeend"),
+                      Div(H4("Dot: "), Select(*options, id="chat-dot")),
+                      Div(id="chat-log", style="border:1px solid #ccc;height:300px;overflow-y:auto;padding:8px"),
                       Form(Input(name="message", placeholder="Message", required=True, id="chat-input"),
-                           Button("Send"),
-                           hx_post="/api/chat", hx_target="#chat-log", hx_swap="beforeend",
-                           id="chat-form"),
-                      P("Streaming over WebSocket (/ws/chat). Plain replies also work without JS."))
+                           Button("Send"), id="chat-form"),
+                      Script("const log = document.getElementById('chat-log');
+let dotId = '';
+const sel = document.getElementById('chat-dot');
+if (sel) { dotId = sel.value; sel.onchange = () => { dotId = sel.value; connect(); }; }
+let ws = null;
+function addMsg(who, text) {
+  const p = document.createElement('p');
+  p.innerHTML = '<b>' + who + ':</b> ';
+  p.appendChild(document.createTextNode(text));
+  log.appendChild(p);
+  log.scrollTop = log.scrollHeight;
+}
+function connect() {
+  if (ws) { ws.onclose = null; ws.close(); }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws/chat?dot_id=' + encodeURIComponent(dotId));
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.kind === 'chat.chunk') { log.lastChild.appendChild(document.createTextNode(m.payload.text)); log.scrollTop = log.scrollHeight; }
+    else if (m.kind === 'chat.start') { addMsg('Dot', ''); }
+    else if (m.kind === 'chat.error') { addMsg('Error', m.payload.error); }
+  };
+  ws.onclose = () => { ws = null; };
+}
+document.getElementById('chat-form').onsubmit = (ev) => {
+  ev.preventDefault();
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  addMsg('You', text);
+  if (!ws) { connect(); setTimeout(() => { if (ws && ws.readyState === 1) ws.send(text); }, 300); }
+  else { ws.send(text); }
+  input.value = '';
+};
+if (window.WebSocket) connect();
+"))
 
     @rt("/api/chat", methods=["POST"])
     async def api_chat(dot_id: str = "", message: str = ""):
@@ -67,6 +133,59 @@ def create_app():
         except WebSocketDisconnect:
             return
 
+    # ---- memory ----
+    @rt("/memory")
+    def memory_page():
+        return Titled("Memory", H1("Memory (federated)"),
+                      Form(Input(name="query", placeholder="Search memory...", id="mem-q", autofocus=True),
+                           Button("Search"), hx_post="/api/memory/search",
+                           hx_target="#mem-results", hx_swap="innerHTML"),
+                      Details(Open(False), Summary("Remember something new"),
+                              Form(Input(name="content", placeholder="Content", required=True),
+                                   Select(Option("semantic", value="semantic"),
+                                          Option("user", value="user"),
+                                          Option("project", value="project"),
+                                          Option("episodic", value="episodic"), name="kind"),
+                                   Button("Save"), hx_post="/api/memory/remember",
+                                   hx_target="#mem-results", hx_swap="innerHTML")),
+                      Div(id="mem-results"))
+
+    @rt("/api/memory/search", methods=["POST"])
+    def memory_search(query: str = ""):
+        lines = memory.search(query.strip(), limit=100)
+        if not lines:
+            return P("No memories found.")
+        return Ul(*[Li(raw(l.replace("<", "&lt;"))) for l in lines])
+
+    @rt("/api/memory/remember", methods=["POST"])
+    def memory_remember(content: str, kind: str = "semantic"):
+        ok = memory.remember(content, kind=kind)
+        return P("Saved." if ok else "Empty content not saved.",
+                 style="color:#4a4" if ok else "color:#e66")
+
+    # ---- models ----
+    @rt("/models")
+    def models_page():
+        rows = "".join(
+            "<tr><td>" + m["backend"] + "</td><td>" + m["status"] + "</td>"
+            + "<td>" + str(m["model"]) + "</td><td>" + str(m["detail"]) + "</td></tr>"
+            for m in models.status())
+        ready = models.ready_backend()
+        return Titled("Models", H1("Model Management"),
+                      P("Active backend: " + (ready or "none ready")),
+                      Table(Thead(Th("Backend"), Th("Status"), Th("Model"), Th("Detail")),
+                            Tr(Td(raw(rows)))),
+                      Button("Scan LiteRT models", hx_post="/api/models/scan",
+                             hx_target="#scan-result", hx_swap="innerHTML"),
+                      Div(id="scan-result"),
+                      P("No model ready? Install one: nexora litert scan / models/gguf / ollama pull"))
+
+    @rt("/api/models/scan", methods=["POST"])
+    def models_scan():
+        found = models.scan_litert()
+        return P("Scan complete: " + str(found) + " LiteRT model(s) found.")
+
+    # ---- dots / tasks / approvals / settings ----
     @rt("/dots")
     def dots():
         with SessionFactory() as s:
@@ -137,15 +256,14 @@ def create_app():
             for name, p in PROFILES.items())
         return Titled("Settings", H1("Settings"),
                       H2("Device Profile"),
-                      Table(
-                          Thead(Th("Profile"), Th("Max workers"), Th("Poll"),
-                                Th("Browser"), Th("Context")),
-                          Tr(Td(raw(rows))),
-                      ),
+                      Table(Thead(Th("Profile"), Th("Max workers"), Th("Poll"),
+                                  Th("Browser"), Th("Context")), Tr(Td(raw(rows)))),
                       P("Set with NEXORA_PROFILE env var or: nexora start --profile <name>"),
                       H2("System"),
                       P(f"Local-only: {settings.local_only}"),
                       P(f"Auth enabled: {settings.auth_enabled}"),
-                      P(f"Host: {settings.host}:{settings.port}"))
+                      P(f"Host: {settings.host}:{settings.port}"),
+                      Form(Button("Logout"), action="/auth/logout", method="post"))
 
+    app = AuthMiddleware(app)
     return app

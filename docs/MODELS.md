@@ -1,14 +1,17 @@
-# Model System
+# Model Management
 
-The Model Bus routes across providers with the failover order:
+Backends (priority order): LiteRT-LM -> GGUF -> Ollama -> remote (only when
+`NEXORA_LOCAL_ONLY=false`).
 
-    LiteRT-LM -> GGUF (llama.cpp) -> Ollama -> remote (optional)
+## UI
+- `/models` — live health table per backend + LiteRT scan button
+- `POST /api/models/scan` — rescans the model directory
 
-## Providers
-- **LiteRT-LM** (built-in): .litertlm files, optional runtime package.
-- **GGUF**: works with a local llama.cpp server (127.0.0.1:8080) or llama-cpp-python.
-- **Ollama**: local Ollama daemon on 127.0.0.1:11434.
-- **OpenAI-compatible remote**: only when NEXORA_LOCAL_ONLY=false and configured.
+## Install a model
+```bash
+nexora litert scan          # find LiteRT-LM models
+# or drop .gguf files in ./models
+ollama pull llama3          # Ollama backend
+```
 
-All providers implement: load, unload, generate, stream, health, metadata, context_info.
-Check readiness: nexora doctor
+No model ready => chat returns an honest install hint, never a fake reply.
