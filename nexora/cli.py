@@ -1,4 +1,6 @@
 """nexora command-line interface."""
+import asyncio
+
 import typer
 
 from nexora.config import settings
@@ -11,12 +13,29 @@ cli.add_typer(backup_cli, name="backup")
 
 
 @cli.command()
-def start():
-    """Start the FastHTML control center."""
+def start(profile: str = typer.Option("balanced",
+                                      help="battery-saver/balanced/performance")):
+    """Start the control center + background worker."""
     import uvicorn
     from nexora.server import create_app
+    from nexora.automation.scheduler import Scheduler
+    from nexora.automation.worker import BackgroundWorker
+
     app, _rt = create_app()
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    worker = BackgroundWorker(Scheduler(), profile=profile)
+
+    async def serve():
+        config = uvicorn.Config(app, host=settings.host, port=settings.port,
+                                loop="asyncio")
+        server = uvicorn.Server(config)
+        worker_task = asyncio.create_task(worker.run())
+        try:
+            await server.serve()
+        finally:
+            worker.stop()
+            worker_task.cancel()
+
+    asyncio.run(serve())
 
 
 @cli.command()
@@ -59,7 +78,6 @@ def chat(goal: str):
 @cli.command()
 def simulate(goal: str):
     """Dry-run a task: plan + policy-check steps without side effects."""
-    import asyncio
     from types import SimpleNamespace
     from nexora.database.engine import init_db
     from nexora.core.task_engine import TaskEngine
@@ -73,6 +91,15 @@ def simulate(goal: str):
     t = TaskEngine().get(t.id)
     typer.echo("status: " + t.status)
     typer.echo(t.result or t.error)
+
+
+@cli.command()
+def password():
+    """Generate a password hash for NEXORA_SECRET_PASSWORD_HASH."""
+    import getpass
+    from nexora.security.auth import AuthManager
+    pw = getpass.getpass("New password: ")
+    typer.echo(AuthManager.hash_password(pw))
 
 
 @cli.command()
@@ -100,15 +127,6 @@ def backup_restore(archive: str, skip_db: bool = typer.Option(False)):
         typer.echo("restored " + str(len(result["restored"])) + " items")
     else:
         typer.echo("error: " + result.get("error", "unknown"))
-
-
-@cli.command()
-def password():
-    """Generate a password hash for NEXORA_SECRET_PASSWORD_HASH."""
-    import getpass
-    from nexora.security.auth import AuthManager
-    pw = getpass.getpass("New password: ")
-    typer.echo(AuthManager.hash_password(pw))
 
 
 @litert.command("list")
