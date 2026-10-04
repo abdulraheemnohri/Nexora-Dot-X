@@ -1,10 +1,13 @@
 .venv/
 __pycache__/
-*.py[cod]
+*.pyc
 .env
 data/
+models/
+workspaces/
 logs/
-models/*
-workspaces/*
+*.db
 .pytest_cache/
 .ruff_cache/
+dist/
+build/

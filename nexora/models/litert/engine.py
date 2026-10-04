@@ -1,13 +1,14 @@
 """Built-in LiteRT-LM provider (first-class local runtime).
 
-Works in three states:
-- runtime + model present  -> ready, real inference
-- runtime missing          -> unavailable, clear message
-- model missing            -> unavailable until a model is imported
+States:
+- runtime + model loaded -> ready, real inference
+- runtime missing       -> unavailable, with install hint
+- model missing         -> unavailable until a .litertlm model is imported
 """
+from pathlib import Path
 from nexora.models.base import ModelProvider, ModelInfo
 from nexora.models.litert.diagnostics import scan, runtime_available
-from nexora.models.litert.manifest import Manifest, load_manifest
+from nexora.models.litert.manifest import load_manifest
 
 
 class LiteRTProvider(ModelProvider):
@@ -15,7 +16,7 @@ class LiteRTProvider(ModelProvider):
 
     def __init__(self, model_path=None):
         self._model = None
-        self._manifest: Manifest | None = None
+        self._manifest = None
         self._model_path = model_path
         self._detail = ""
 
@@ -25,15 +26,12 @@ class LiteRTProvider(ModelProvider):
             return False
         try:
             from litert_lm import runtime as litert_runtime  # type: ignore
-            self._model = litert_lm_load(path)  # placeholder replaced below
-        except Exception as e:  # pragma: no cover - depends on optional runtime
+            session = litert_runtime.Session(model=str(path))
+        except Exception as e:  # pragma: no cover - optional runtime
             self._detail = f"load failed: {e}"
             return False
-        self._manifest = load_manifest(type("P", (), {"exists": lambda s: True,
-                                                      "with_suffix": None,
-                                                      "name": path.split("/")[-1],
-                                                      "stem": path.split("/")[-1],
-                                                      "stat": None})())
+        self._model = session
+        self._manifest = load_manifest(Path(path))
         return True
 
     def unload(self) -> None:
@@ -44,7 +42,10 @@ class LiteRTProvider(ModelProvider):
                  max_tokens: int = 512) -> str:
         if self._model is None:
             raise RuntimeError("LiteRT-LM: no model loaded")
-        raise RuntimeError("LiteRT-LM: runtime adapter not installed")
+        try:
+            return self._model.generate(prompt)
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(f"LiteRT-LM inference failed: {e}") from e
 
     def stream(self, prompt: str, **kwargs):
         yield self.generate(prompt, **kwargs)
@@ -52,14 +53,15 @@ class LiteRTProvider(ModelProvider):
     def health(self) -> ModelInfo:
         if self._model is not None:
             return ModelInfo(self._manifest.name if self._manifest else "litert",
-                             "litert", loaded=True, status="ready")
+                             self.backend, loaded=True, status="ready",
+                             context=self._manifest.context if self._manifest else 0)
         info = scan()
         if not info["runtime_available"]:
-            return ModelInfo("litert", "litert", status="unavailable",
+            return ModelInfo("litert", self.backend, status="unavailable",
                              detail="runtime not installed")
         if not info["models"]:
-            return ModelInfo("litert", "litert", status="unavailable",
+            return ModelInfo("litert", self.backend, status="unavailable",
                              detail="no .litertlm model installed")
-        return ModelInfo(info["models"][0]["name"], "litert", status="unavailable",
-                         detail="model found, not loaded",
-                         context=info["models"][0]["context"])
+        m = info["models"][0]
+        return ModelInfo(m["name"], self.backend, status="unavailable",
+                         detail="model found, not loaded", context=m["context"])

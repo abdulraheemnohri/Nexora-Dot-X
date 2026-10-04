@@ -1,7 +1,8 @@
 from nexora.server import create_app
 
-app = create_app()
+app, rt = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    from nexora.config import settings
+    uvicorn.run(app, host=settings.host, port=settings.port)

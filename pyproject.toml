@@ -5,8 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nexora-dot-x"
 version = "0.1.0"
-description = "Self-hosted local-first autonomous AI agent runtime"
-requires-python = ">=3.12"
+description = "Self-hosted local-first autonomous AI agent operating system (FastHTML + LiteRT-LM)"
+readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
   "python-fasthtml>=0.12",
   "sqlalchemy>=2.0",
@@ -14,6 +15,7 @@ dependencies = [
   "typer>=0.12",
   "rich>=13.7",
   "httpx>=0.27",
+  "uvicorn>=0.30",
   "websockets>=12",
 ]
 
@@ -28,3 +30,6 @@ nexora = "nexora.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["nexora*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
