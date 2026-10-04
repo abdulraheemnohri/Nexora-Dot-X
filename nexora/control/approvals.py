@@ -36,3 +36,9 @@ class ApprovalCenter:
         if a is None:
             return None
         return repo.update_fields(a, status="rejected")
+
+    def decide(self, approval_id: str, approved: bool, always: bool = False):
+        """User decision entry point (server + CLI)."""
+        if approved:
+            return self.approve(approval_id, always=always)
+        return self.reject(approval_id)

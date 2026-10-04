@@ -13,13 +13,12 @@ class MemoryService:
         self.manager = manager or MemoryManager()
         self.federation = federation or Federation()
 
-    def search(self, query: str, *, bot_id=None, limit: int = 50) -> list:
-        """Keyword search + federated dedupe across memory kinds."""
+    def search_detailed(self, query: str, *, bot_id=None, limit: int = 50) -> list:
+        """Federated search keeping per-hit metadata (kind, confidence)."""
         rows = self.manager.search(query, bot_id=bot_id, limit=limit)
-        # federate: dedupe identical content across kinds/stores
         items = [MemoryItem(store=(r.kind or "shared"), content=r.content,
-                             confidence=float(r.importance or 0.5),
-                             created_at=float(r.created_at or 0.0))
+                            confidence=float(r.importance or 0.5),
+                            created_at=float(r.created_at or 0.0))
                  for r in rows]
         winners = {}
         for it in items:
@@ -28,7 +27,24 @@ class MemoryService:
             if prev is None or self.federation.resolve([prev, it]) is it:
                 winners[key] = it
         merged = self.federation.merge(list(winners.values()))
-        return [line for line in merged.split("\n") if line.strip()]
+        # re-attach metadata from the winning rows
+        by_content = {r.content.strip().lower(): r for r in rows}
+        out = []
+        for line in merged.split("\n"):
+            if not line.strip():
+                continue
+            row = by_content.get(line.strip().lower())
+            out.append({
+                "content": line,
+                "kind": getattr(row, "kind", None) if row else None,
+                "confidence": round(float(getattr(row, "importance", 0.5) or 0.5), 2)
+                              if row else None,
+            })
+        return out
+
+    def search(self, query: str, *, bot_id=None, limit: int = 50) -> list:
+        """Keyword search + federated dedupe across memory kinds (plain lines)."""
+        return [h["content"] for h in self.search_detailed(query, bot_id=bot_id, limit=limit)]
 
     def remember(self, content: str, *, kind: str = "semantic",
                  importance: float = 0.5, bot_id=None) -> bool:
