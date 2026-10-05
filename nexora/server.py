@@ -211,32 +211,100 @@ def create_app():
         return P("Saved." if ok else "Empty content not saved.",
                  style=style)
 
+    # ---- models ------------------------------------------------------------
+
+    def _model_rows():
+        rows = ""
+        for m in models.status():
+            rows += ("<tr><td>" + m["backend"] + "</td><td>"
+                     + m["status"] + "</td><td>"
+                     + str(m["model"]).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(m["detail"]).replace("<", "&lt;")
+                     + "</td><td>")
+            if m["status"] == "ready":
+                rows += ("<form hx_post='/api/models/unload' "
+                         "hx_target='#models-result' "
+                         "hx_swap='innerHTML'>"
+                         "<input type='hidden' name='backend' value='"
+                         + m["backend"] + "'>"
+                         "<button>Unload</button></form>")
+            else:
+                rows += ("<form hx_post='/api/models/load' "
+                         "hx_target='#models-result' "
+                         "hx_swap='innerHTML'>"
+                         "<input type='hidden' name='backend' value='"
+                         + m["backend"]
+                         + "'><input name='name' "
+                         "placeholder='model name/path'>"
+                         "<button>Load</button></form>")
+            rows += "</td></tr>"
+        return rows
+
     @rt("/models")
     def models_page():
-        rows = "".join(
-            "<tr><td>" + m["backend"] + "</td><td>" + m["status"] \
-            + "</td><td>" + str(m["model"]) + "</td><td>" \
-            + str(m["detail"]) + "</td></tr>"
-            for m in models.status())
         ready = models.ready_backend()
         return Titled("Models", H1("Model Management"),
                       P("Active backend: " + (ready or "none ready")),
                       Table(Thead(Th("Backend"), Th("Status"),
-                                  Th("Model"), Th("Detail")),
-                            Tr(Td(raw(rows)))),
-                      Button("Scan LiteRT models",
-                             hx_post="/api/models/scan",
-                             hx_target="#scan-result",
+                                  Th("Model"), Th("Detail"), Th("Action")),
+                            Tr(Td(raw(_model_rows())))),
+                      Div(id="models-result"),
+                      H2("Discover"),
+                      Button("Find models", hx_post="/api/models/discover",
+                             hx_target="#discover-result",
                              hx_swap="innerHTML"),
-                      Div(id="scan-result"),
+                      Div(id="discover-result"),
                       P("No model ready? Install one: "
-                        "nexora litert scan / models/gguf / ollama pull"))
+                        "nexora litert install / models/gguf / ollama pull"))
 
     @rt("/api/models/scan", methods=["POST"])
     def models_scan():
         found = models.scan_litert()
         return P("Scan complete: " + str(found)
                  + " LiteRT model(s) found.")
+
+    @rt("/api/models/load", methods=["POST"])
+    def models_load(backend: str, name: str = ""):
+        if not (name or "").strip():
+            return P("Enter a model name or path to load.",
+                     style="color:#e66")
+        r = models.load(backend, name.strip())
+        if not r.get("ok"):
+            return P("Load failed: "
+                     + str(r.get("error", "unknown error")),
+                     style="color:#e66")
+        return P("Loaded on " + str(r.get("backend")) + ": "
+                 + str(r.get("model")) + " (" + str(r.get("status"))
+                 + ")", style="color:#4a4")
+
+    @rt("/api/models/unload", methods=["POST"])
+    def models_unload(backend: str):
+        r = models.unload(backend)
+        if not r.get("ok"):
+            return P("Unload failed: "
+                     + str(r.get("error", "unknown error")),
+                     style="color:#e66")
+        return P("Unloaded " + str(r.get("backend")) + " ("
+                 + str(r.get("status")) + ")",
+                 style="color:#4a4")
+
+    @rt("/api/models/discover", methods=["POST"])
+    def models_discover():
+        entries = models.discover()
+        if not entries:
+            return P("No model backends registered.")
+        items = []
+        for e in entries:
+            names = e.get("models") or []
+            if names:
+                listing = ", ".join(str(n) for n in names[:10])
+                items.append("<li><b>" + e["backend"] + "</b>: "
+                             + listing.replace("<", "&lt;") + "</li>")
+        if not items:
+            return P("No loadable models found. Drop a .litertlm/.gguf "
+                     "in models/ or pull an Ollama model.")
+        return Ul(raw("".join(items)))
 
     # ---- skills ------------------------------------------------------------
 
