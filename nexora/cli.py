@@ -22,7 +22,13 @@ def status():
 @cli.command()
 def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
                                       "--profile", "-p",
-                                      help="battery-saver | balanced | performance")):
+                                      help="battery-saver | balanced | performance"),
+          with_litert_serve: bool = typer.Option(
+              False, "--with-litert-serve",
+              help="Also start the official litert-lm OpenAI-compatible "
+                   "server in the background (127.0.0.1:9379)"),
+          serve_port: int = typer.Option(9379, "--serve-port",
+                                         help="Port for the litert-lm server")):
     """Start the FastHTML server and the always-on background worker."""
     import asyncio
     import uvicorn
@@ -33,6 +39,19 @@ def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
     p = get_profile(profile)
     worker = BackgroundWorker(p.name)
     typer.echo(f"Starting Nexora ({p.name} profile) on {settings.host}:{settings.port} ...")
+
+    serve_proc = None
+    if with_litert_serve:
+        from nexora.models.litert import cli_bridge
+        args = cli_bridge.build_serve_args(host="127.0.0.1", port=serve_port)
+        serve_proc = cli_bridge.spawn_serve(args)
+        if serve_proc is None:
+            typer.secho("litert-lm CLI not found - skipping the serve "
+                        "attachment. Install with: pip install litert-lm",
+                        fg=typer.colors.YELLOW)
+        else:
+            typer.echo(f"litert-lm serve attached on 127.0.0.1:{serve_port}/v1 "
+                        f"(pid {serve_proc.pid})")
 
     async def serve():
         server = uvicorn.Server(uvicorn.Config(
@@ -49,6 +68,14 @@ def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
         asyncio.run(serve())
     except KeyboardInterrupt:
         typer.echo("Nexora stopped.")
+    finally:
+        if serve_proc is not None:
+            serve_proc.terminate()
+            try:
+                serve_proc.wait(timeout=5)
+            except Exception:
+                serve_proc.kill()
+            typer.echo("litert-lm serve stopped.")
 
 
 @cli.command()

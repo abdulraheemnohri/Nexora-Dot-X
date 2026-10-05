@@ -44,8 +44,10 @@ Optional extras: pip install -e ".[litert,browser,dev]"
 
     nexora start                      # server + background worker
     nexora start --profile battery-saver   # low-power device profile
+    nexora start --with-litert-serve      # + litert-lm OpenAI server (9379)
     nexora doctor                     # environment + provider diagnostics
     nexora chat "hi"                  # one-shot generation via mode
+
 
 l bus
     nexora simulate "research AI news" # dry-run: plan + policy, no side effects
@@ -94,7 +96,8 @@ telemetry or uploads happen. Flip to false to allow remote model fallback.
 
 Background worker polls (only when tokens are configured):
 
-- Telegram: NEXORA_SECRET_TELEGRAM_TOKEN
+- Telegram: NEXORA_SEC
+RET_TELEGRAM_TOKEN
 - Discord:  NEXORA_SECRET_DISCORD_TOKEN + NEXORA_DISCORD_CHANNEL_ID
 - Slack:    NEXORA_SECRET_SLACK_BOT_TOKEN + NEXORA_SLACK_CHANNEL_ID
 

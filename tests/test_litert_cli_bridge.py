@@ -69,3 +69,25 @@ def test_require_network_allows(monkeypatch):
 def test_require_network_env_allows(monkeypatch):
     monkeypatch.setenv("NEXORA_LOCAL_ONLY", "false")
     cb.require_network(False)
+
+
+def test_spawn_serve_returns_none_without_cli(monkeypatch):
+    monkeypatch.setattr(cb, "resolve_cli", lambda: None)
+    assert cb.spawn_serve(["serve", "--port=9379"]) is None
+
+
+def test_spawn_serve_returns_popen(monkeypatch):
+    class FakeProc:
+        pid = 4242
+
+    def fake_popen(cmd, **kwargs):
+        fake_popen.last_cmd = cmd
+        return FakeProc()
+
+    fake_popen.last_cmd = None
+    monkeypatch.setattr(cb, "resolve_cli", lambda: ["litert-lm"])
+    monkeypatch.setattr(cb.subprocess, "Popen", fake_popen)
+    proc = cb.spawn_serve(["serve", "--host=127.0.0.1", "--port=9379"])
+    assert isinstance(proc, FakeProc)
+    assert fake_popen.last_cmd == ["litert-lm", "serve",
+                                   "--host=127.0.0.1", "--port=9379"]

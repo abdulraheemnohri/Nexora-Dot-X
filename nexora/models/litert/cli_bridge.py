@@ -5,7 +5,6 @@ https://developers.google.com/edge/litert-lm/cli): model import from
 HuggingFace, one-shot prompt runs with GPU / Multi-Token-Prediction /
 attachment options, and the OpenAI-compatible local server (port 9379).
 """
-import os
 import shutil
 import subprocess
 
@@ -93,3 +92,11 @@ def serve_cli(args):
     if prefix is None:
         raise RuntimeError(NOT_FOUND_HINT)
     return subprocess.call(prefix + args)
+
+
+def spawn_serve(args):
+    """Start litert-lm serve in the background; return the Popen or None."""
+    prefix = resolve_cli()
+    if prefix is None:
+        return None
+    return subprocess.Popen(prefix + args)

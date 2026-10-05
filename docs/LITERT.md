@@ -1,7 +1,7 @@
 # LiteRT-LM (built-in model runtime)
 
 LiteRT-LM is Nexora's first-class local model backend. The built-in default
-model is **litert-community/gemma-4-E2B-it-litert-lm** - a small, on-device
+model is litert-community/gemma-4-E2B-it-litert-lm - a small, on-device
 Gemma model in the .litertlm format (private inference, no network needed
 after download).
 
@@ -16,6 +16,25 @@ after download).
     nexora litert run "hi" --cli        # one-shot via the official litert-lm CLI
     nexora litert serve                 # OpenAI-compatible server on 127.0.0.1:9379
     nexora litert doctor                # runtime + model + CLI diagnostics
+
+## Auto-attach with nexora start
+
+    nexora start --with-litert-serve [--serve-port 9379]
+
+starts the web server, worker AND the official litert-lm server together.
+The litert-lm process is terminated cleanly when Nexora stops. If the
+litert-lm CLI is not installed, Nexora warns and continues without it.
+
+## Using serve as a model-bus provider
+
+When 'nexora litert serve' is running, the model bus picks it up
+automatically as the 'litert-serve' provider: any generation request
+(chat CLI, web UI, worker tasks) is served through the OpenAI-compatible
+endpoint without loading the model a second time in-process.
+
+    NEXORA_LITERT_SERVE_URL=http://127.0.0.1:9379   # default
+
+Loopback URLs count as on-device, so this works in local-only mode too.
 
 ## Official litert-lm CLI bridge
 
@@ -44,8 +63,7 @@ nexora litert run accepts the official CLI options when --cli is used (or
 automatically when an option needs the CLI):
 
 - --backend cpu|gpu - GPU acceleration (Vulkan / Metal drivers)
-- --mtp - Multi-Token Prediction (needs a model with 
-a drafter)
+- --mtp - Multi-Token Prediction (needs a model with a drafter)
 - --attachment <file> + --vision-backend / --audio-backend
   - multimodal image/audio inputs
 
@@ -53,17 +71,6 @@ Examples:
 
     nexora litert run "Describe this" --cli --backend gpu --mtp
     nexora litert run "What is this?" --cli -a image.jpg --vision-backend gpu
-
-## Using serve as a model-bus provider
-
-When 'nexora litert serve' is running, the model bus picks it up
-automatically as the 'litert-serve' provider: any generation request
-(chat CLI, web UI, worker tasks) is served through the OpenAI-compatible
-endpoint without loading the model a second time in-process.
-
-    NEXORA_LITERT_SERVE_URL=http://127.0.0.1:9379   # default
-
-Loopback URLs count as on-device, so this works in local-only mode too.
 
 ## Local-only guard
 

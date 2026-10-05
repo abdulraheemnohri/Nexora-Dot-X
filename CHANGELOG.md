@@ -6,7 +6,12 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- CHANGELOG.md started with full project history (V1 through V2.12).
+- CHANGELOG.md started with full project history (V1 through V2.13).
+
+## [2.13] - 2026-10-05
+
+### Added
+- CHANGELOG.md covering the full project history (V1 through V2.12).
 
 ## [2.12] - 2026-10-05
 
