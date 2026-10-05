@@ -8,6 +8,40 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.30] - 2026-10-05
+
+### Added
+- Dots enable/pause toggle: POST /api/dots/toggle flips the
+  enabled flag and redirects to /dots. Every Dot card now shows
+  its status and a Pause/Resume button (paused Dots are excluded
+  from chat and new work).
+
+## [2.29] - 2026-10-05
+
+### Added
+- Tasks page live view: HTMX polling every 5s via
+  GET /api/tasks/rows - statuses update without a reload.
+- Per-task Detail button (POST /api/tasks/detail): shows ID, dot,
+  goal, status, priority, result, error, created/updated times
+  and the recorded plan steps.
+
+## [2.28] - 2026-10-05
+
+### Added
+- nexora skills import <archive.zip>: unpacks the archive to a
+  temp dir, locates skill.json, and imports the skill into the
+  pending queue (skills/.pending). Imported skills still require
+  explicit user approval before they run (System 1).
+
+## [2.23] - [2.27] - 2026-10-05
+
+### Added (backfill of previously undocumented releases)
+- Skills scanner findings shown directly in the /skills UI
+  (static scan column plus per-skill Scan buttons).
+- Approved-skill runtime, live approvals dashboard and
+  per-skill Detail view (partially documented under 2.17/2.21/2.22).
+- nexora skills CLI: list/approve/reject/scan/run/export.
+- GET /api/skills JSON endpoint for integrations.
 ## [2.22] - 2026-10-05
 
 ### Added
@@ -63,6 +97,7 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Skill scanner findings surfaced in the /skills UI:
   - Static scan column for ev
+
 ery pending skill (forbidden
     imports/calls, network use, syntax errors)
   - Scan button to re-run the safety scan on demand
@@ -132,7 +167,8 @@ e):
 
 ### Added
 - litert-serve model-bus provider: uses the official
-  litert-lm se
+  litert-lm s
+e
 rve OpenAI-compatible server
   (GET /v1/models, POST /v1/chat/completions).
 - Loopback URLs allowed in local-only mode (on-device);
@@ -204,7 +240,8 @@ tart.
 ## [2.2] - 2026-10-03
 
 ### Added
-- Memory federation service, model servi
+- Memory federation service, model ser
+vi
 ce, auth manager,
   backup/restore system, backup CLI, password hashing.
 - Chat page, terminal sessions UI, skills page, docs
