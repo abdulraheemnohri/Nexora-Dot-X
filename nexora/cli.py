@@ -16,7 +16,36 @@ DEFAULT_LITERT_FILE = "gemma-4-E2B-it.litertlm"
 
 @cli.command()
 def status():
-    typer.echo(f"Nexora Dot X 0.1.0 | local_only={settings.local_only}")
+    """Show runtime status (aligned with GET /api/status)."""
+    from nexora import __version__
+    from nexora.core.profiles import get_profile
+
+    typer.echo(f"Nexora Dot X {__version__} | "
+               f"profile={get_profile().name}")
+    typer.echo(f"local_only={settings.local_only} | "
+               f"auth={settings.auth_enabled} | "
+               f"{settings.host}:{settings.port}")
+    try:
+        from nexora.control import always_allow as grants_store
+        from nexora.control.approvals import ApprovalCenter
+        from nexora.core.model_service import ModelService
+        from nexora.skills.manager import SkillManager
+
+        models = ModelService()
+        typer.echo(f"ready model backend: "
+                   f"{models.ready_backend() or 'none ready'}")
+        for m in models.status():
+            typer.echo(f"  - {m['backend']}: {m['status']} "
+                       f"({m['model']})")
+        typer.echo(f"pending approvals: "
+                   f"{len(ApprovalCenter().pending())}")
+        typer.echo(f"always-allow grants: "
+                   f"{len(grants_store.list_grants())}")
+        sm = SkillManager()
+        typer.echo(f"skills: {len(sm.pending())} pending, "
+                   f"{len(sm.scan())} active")
+    except Exception as e:
+        typer.echo(f"runtime details unavailable: {e}")
 
 
 @cli.command()
@@ -50,7 +79,8 @@ def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
                         "attachment. Install with: pip install litert-lm",
                         fg=typer.colors.YELLOW)
         else:
-            typer.echo(f"litert-lm serve attached on 127.0.0.1:{serve_port}/v1 "
+            typer.ec
+ho(f"litert-lm serve attached on 127.0.0.1:{serve_port}/v1 "
                         f"(pid {serve_proc.pid})")
 
     async def serve():
@@ -110,7 +140,8 @@ def litert_install(
         False, "--allow-network", "-y",
         help="Explicitly allow the network download (local-only default: off)"),
 ):
-    """Download the built-in LiteRT-LM model (gemma-4-E2B-it-litert-lm by default)."""
+    """Download the built-in LiteRT-LM mode
+l (gemma-4-E2B-it-litert-lm by default)."""
     from nexora.models.litert.download import download_default_model
     typer.echo(f"Downloading {repo} ...")
     try:
@@ -153,7 +184,8 @@ def litert_import(
         raise typer.Exit(1)
     except RuntimeError as e:
         typer.secho(str(e), fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit
+(1)
     if result.returncode != 0:
         typer.secho("litert-lm import failed: " + (result.stderr or result.stdout),
                     fg=typer.colors.RED)
@@ -193,7 +225,8 @@ def litert_run(
                         fg=typer.colors.YELLOW)
             raise typer.Exit(1)
         try:
-            args = cli_bridge.build_run_args(
+            args = cli_br
+idge.build_run_args(
                 ref, prompt=prompt, backend=backend, speculative=speculative,
                 attachment=attachment, vision_backend=vision_backend,
                 audio_backend=audio_backend)
@@ -237,7 +270,8 @@ def litert_serve(
     from nexora.models.litert import cli_bridge
     args = cli_bridge.build_serve_args(host=host, port=port, verbose=verbose)
     typer.echo(f"litert-lm OpenAI-compatible server on http://{host}:{port}/v1")
-    typer.echo("Endpoints: GET /v1/models, POST /v1/chat/completions (Ctrl+C to stop)")
+    typer.ec
+ho("Endpoints: GET /v1/models, POST /v1/chat/completions (Ctrl+C to stop)")
     try:
         rc = cli_bridge.serve_cli(args)
     except RuntimeError as e:
