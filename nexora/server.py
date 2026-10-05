@@ -15,6 +15,7 @@ from nexora.core.memory_service import MemoryService
 from nexora.core.model_service import ModelService
 from nexora.core.worker_runtime import WorkerRuntime
 from nexora.core.autonomous_worker import AutonomousWorker
+from nexora.core.task_step_runner import TaskStepRunner
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
@@ -89,11 +90,10 @@ def create_app():
     auth = AuthManager()
     skills = SkillManager()
     worker_runtime = WorkerRuntime(AutonomousWorker(tasks))
+    step_runner = TaskStepRunner()
 
     async def _worker_executor(step):
-        # Execution remains intentionally injected behind System 1. The server
-        # lifecycle owns the worker; no model/tool bypass is introduced here.
-        return "step queued for authorized runtime execution"
+        return await step_runner(step)
 
     async def _start_worker():
         await worker_runtime.start(_worker_executor)
