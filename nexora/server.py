@@ -71,6 +71,8 @@ if (window.WebSocket) connect();"""
 
 START_TIME = time()
 
+TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED"}
+
 
 def create_app():
     app, rt = fast_app()
@@ -578,7 +580,7 @@ def create_app():
 
     @rt("/dots/{dot_id}")
     def dot_detail(dot_id: str):
-        """Dot detail: profile plus all of its tasks."""
+        """Dot detail: profile, queue-task form and all of its tasks."""
         with SessionFactory() as s:
             d = s.get(Dot, dot_id)
             if d is None:
@@ -606,6 +608,13 @@ def create_app():
         return Titled("Dot", H1(d.name),
                       Table(Thead(Th("Field"), Th("Value")),
                             Tr(Td(raw(rows)))),
+                      H2("Queue a task"),
+                      Form(Input(type="hidden", name="dot_id",
+                                 value=d.id),
+                           Input(name="goal", placeholder="Goal",
+                                 required=True),
+                           Button("Queue task"), action="/api/tasks",
+                           method="post"),
                       H2("Tasks"),
                       Ul(raw(tasks_html)) if tasks_html
                       else P("No tasks for this Dot yet."),
@@ -673,6 +682,7 @@ def create_app():
         """Live task table fragment (HTMX polling every 5s).
 
         Optional ?status= filter narrows the list to one status.
+        Non-terminal tasks get an inline Cancel button.
         """
         rows = ""
         for t in tasks.list(status=(status or None)):
@@ -684,13 +694,20 @@ def create_app():
                      + 'hx_target="#tasks-result" hx_swap="innerHTML">'
                      + '<input type="hidden" name="task_id" value="'
                      + str(t.id) + '"><button>Detail</button></form>'
-                     + "</td></tr>")
+                     + "</td><td>")
+            if str(t.status) not in TERMINAL_STATUSES:
+                rows += ('<form hx_post="/api/tasks/cancel" '
+                         'hx_target="#tasks-result" '
+                         'hx_swap="innerHTML">'
+                         '<input type="hidden" name="task_id" value="'
+                         + str(t.id) + '"><button>Cancel</button></form>')
+            rows += "</td></tr>"
         if not rows:
             return P("No tasks"
                      + ((" with status " + status) if status else "")
                      + ".")
         return raw("<table><tr><th>Goal</th><th>Status</th><th>ID</th>"
-                   "<th></th></tr>" + rows + "</table>")
+                   "<th></th><th></th></tr>" + rows + "</table>")
 
     @rt("/api/tasks/detail", methods=["POST"])
     def task_detail(task_id: str):
@@ -727,6 +744,15 @@ def create_app():
         else:
             html += P("No plan steps recorded.")
         return raw(html)
+
+    @rt("/api/tasks/cancel", methods=["POST"])
+    def task_cancel(task_id: str):
+        """Cancel a task (sets status to CANCELLED)."""
+        t = tasks.set_status(task_id, "CANCELLED",
+                             result="Cancelled by user")
+        if t is None:
+            return P("Task not found: " + task_id, style="color:#e66")
+        return P("Task cancelled: " + str(t.id), style="color:#4a4")
 
     @rt("/api/tasks", methods=["POST"])
     async def create_task(dot_id: str, goal: str):
