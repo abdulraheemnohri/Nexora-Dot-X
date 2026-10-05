@@ -17,7 +17,7 @@ from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
 from nexora.security.auth import AuthManager
-from nexora.security.middleware import COOKIE, AuthMiddleware
+from nexora.security.middleware import COOKIE, AuthMiddleware, websocket_authenticated
 from nexora.skills.manager import SkillManager
 from nexora.skills.runtime import run_skill
 from nexora.skills.scanner import scan_skill_files
@@ -207,6 +207,9 @@ def create_app():
 
     @app.websocket("/ws/chat")
     async def ws_chat(ws: WebSocket):
+        if not websocket_authenticated(ws):
+            await ws.close(code=1008, reason="unauthorized")
+            return
         await ws.accept()
         dot_id = ws.query_params.get("dot_id") or ""
         try:
