@@ -63,8 +63,7 @@ def test_health_unreachable_when_server_down():
 def test_generate_uses_chat_completions():
     http = FakeHttp()
     p = LiteRTServeProvider(model="gemma4-e2b", client=http)
-    ou
-t = p.generate("hello")
+    out = p.generate("hello")
     assert out == "hello back"
     url, body = http.posts[0]
     assert url.endswith("/v1/chat/completions")

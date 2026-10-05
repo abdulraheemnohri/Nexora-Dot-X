@@ -90,7 +90,7 @@ class AuditLog(Base):
     tool = Column(String, default="")
     action = Column(Text, default="")
     decision = Column(String, default="")
-    outcome = Column(String, default="")
+    outcome = Column(Text, default="")
     created_at = Column(Float, default=now)
 
 

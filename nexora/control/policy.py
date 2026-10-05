@@ -74,8 +74,7 @@ class PolicyEngine:
 
     def evaluate(self, tool: str, action: str, *, dry_run: bool = False) -> PolicyResult:
         action = (action or "").strip()
-        # hard blocks come FIRST: no always-allow grant ca
-n ever whitelist a
+        # hard blocks come FIRST: no always-allow grant can ever whitelist a
         # dangerous command
         for rx in self._dangerous:
             if rx.search(action):
