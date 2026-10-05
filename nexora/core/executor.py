@@ -25,7 +25,7 @@ class Executor:
         self.tools = tool_registry
 
     def execute(self, step: dict, *, bot_id=None, task_id=None,
-                dry_run=False) -> StepOutcome:
+                step_id=None, dry_run=False) -> StepOutcome:
         tool = step.get("tool") or step.get("kind", "work")
         action = step.get("action") or step.get("description", "")
         decision = self.policy.evaluate(tool, action, dry_run=dry_run)
@@ -38,7 +38,8 @@ class Executor:
             return StepOutcome(False, f"BLOCKED by policy: {decision.reason}")
         if decision.decision is Decision.ASK:
             a = self.approvals.request(
-                tool, action, decision.reason, decision.risk.value
+                tool, action, decision.reason, decision.risk.value,
+                task_id=task_id, step_id=step_id
             )
             bus.publish(
                 "approval.requested",
