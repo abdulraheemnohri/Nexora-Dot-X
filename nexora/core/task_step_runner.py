@@ -13,7 +13,7 @@ class TaskStepRunner:
         except json.JSONDecodeError: pass
         if not payload:
             payload = {"description": step.description}
-        outcome: StepOutcome = await asyncio.to_thread(self.executor.execute, payload,
+        outcome: StepOutcome = await self.executor.execute_async(payload,
                                                         task_id=step.task_id, step_id=step.id)
         if outcome.pending_approval:
             # The durable worker must stop rather than mark an approval as complete.
