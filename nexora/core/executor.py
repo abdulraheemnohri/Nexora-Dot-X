@@ -77,17 +77,28 @@ class Executor:
         if approval.status != "approved":
             return StepOutcome(False, "approval not approved")
 
+        approval = self.approvals.claim(approval_id)
+        if approval is None:
+            return StepOutcome(False, "approval already claimed or executed")
+
         tool = approval.tool
         action = approval.action
         audit(
             "user", tool=tool, action=action, decision="ALLOW",
             outcome=f"executing approved action {approval.id}",
         )
-        if self.tools is None:
+        try:
+            if self.tools is None:
+                result = {"ok": True, "output": f"approved action recorded: {tool}: {action}"}
+            else:
+                result = self.tools.run(tool, action)
+            if result.get("ok", True):
+                self.approvals.mark_executed(approval_id)
+            else:
+                self.approvals.mark_failed(approval_id)
             return StepOutcome(
-                True, f"approved action recorded: {tool}: {action}"
+                result.get("ok", True), result.get("output", "")
             )
-        result = self.tools.run(tool, action)
-        return StepOutcome(
-            result.get("ok", True), result.get("output", "")
-        )
+        except Exception as exc:
+            self.approvals.mark_failed(approval_id)
+            return StepOutcome(False, f"approved action failed: {exc}")
