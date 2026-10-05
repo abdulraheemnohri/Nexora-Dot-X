@@ -9,6 +9,8 @@ from nexora.models.litert.diagnostics import scan
 cli = typer.Typer(no_args_is_help=True)
 litert = typer.Typer(no_args_is_help=True)
 cli.add_typer(litert, name="litert")
+skills = typer.Typer(no_args_is_help=True)
+cli.add_typer(skills, name="skills")
 
 DEFAULT_LITERT_MODEL = "litert-community/gemma-4-E2B-it-litert-lm"
 DEFAULT_LITERT_FILE = "gemma-4-E2B-it.litertlm"
@@ -310,6 +312,89 @@ def litert_doctor():
             typer.echo("  - " + str(m.get("name", m["path"])))
         else:
             typer.echo("  - " + str(m))
+
+
+# ---- skills CLI ---------------------------------------------------------
+
+@skills.command("list")
+def skills_list(pending_only: bool = typer.Option(
+        False, "--pending", help="Only skills awaiting approval")):
+    """List active (and optionally pending) skills."""
+    from nexora.skills.manager import SkillManager
+    sm = SkillManager()
+    pend = sm.pending()
+    act = sm.scan()
+    items = pend if pending_only else act + pend
+    if not items:
+        typer.echo("No skills found.")
+        return
+    for s in items:
+        mark = ("pending" if s.get("_status") == "pending" else "active")
+        typer.echo(f"[{mark}] {s.get('name', '?')} - "
+                   f"{s.get('description', '')}")
+    if not pending_only and pend:
+        typer.echo(f"({len(pend)} pending approval - run: "
+                   "nexora skills approve <name>)")
+
+
+@skills.command("approve")
+def skills_approve(name: str = typer.Argument(..., help="Skill name")):
+    """Approve a pending skill (moves it to active)."""
+    from nexora.skills.manager import SkillManager
+    r = SkillManager().approve(name)
+    if not r.get("ok"):
+        typer.secho("Error: " + r.get("error", ""), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"Skill approved: {name}")
+
+
+@skills.command("reject")
+def skills_reject(name: str = typer.Argument(..., help="Skill name")):
+    """Reject (delete) a pending skill."""
+    from nexora.skills.manager import SkillManager
+    r = SkillManager().reject(name)
+    if not r.get("ok"):
+        typer.secho("Error: " + r.get("error", ""), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"Skill rejected: {name}")
+
+
+@skills.command("scan")
+def skills_scan_cmd(name: str = typer.Argument(..., help="Skill name")):
+    """Run the static safety scan on a skill's source files."""
+    from nexora.skills.manager import SkillManager
+    from nexora.skills.scanner import scan_skill_files
+    s = SkillManager().inspect(name)
+    if not s:
+        typer.secho("Skill not found: " + name, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    r = scan_skill_files(s)
+    if r["ok"]:
+        typer.echo(f"Scan clean for {name} "
+                   f"({r['files_scanned']} file(s)).")
+        return
+    typer.secho(f"Findings for {name}:", fg=typer.colors.RED)
+    for i in r["issues"]:
+        typer.echo("  - " + i)
+    raise typer.Exit(1)
+
+
+@skills.command("run")
+def skills_run(name: str = typer.Argument(..., help="Skill name"),
+               payload: str = typer.Option("", "--payload", "-p",
+                                           help="Input text for the skill")):
+    """Run an approved skill (static scan is re-checked first)."""
+    from nexora.skills.manager import SkillManager
+    from nexora.skills.runtime import run_skill
+    s = SkillManager().inspect(name)
+    if not s:
+        typer.secho("Skill not found: " + name, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    r = run_skill(s, payload)
+    if not r.get("ok"):
+        typer.secho("Run failed: " + r.get("error", ""), fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(str(r.get("result")))
 
 
 def main():
