@@ -45,7 +45,8 @@ Optional extras: pip install -e ".[litert,browser,dev]"
     nexora start                      # server + background worker
     nexora start --profile battery-saver   # low-power device profile
     nexora start --with-litert-serve      # + litert-lm OpenAI server (9379)
-    nexora doctor                     # environment + provider diagnostics
+    nexora doctor                     # environment + provider dia
+gnostics
     nexora chat "hi"                  # one-shot generation via mode
 
 
@@ -94,7 +95,8 @@ telemetry or uploads happen. Flip to false to allow remote model fallback.
 
 ## Channels
 
-Background worker polls (only when tokens are configured):
+Back
+ground worker polls (only when tokens are configured):
 
 - Telegram: NEXORA_SEC
 RET_TELEGRAM_TOKEN
@@ -113,3 +115,30 @@ green runs close them.
 ## License
 
 MIT
+
+
+## 0.2.0 Highlights
+
+- **Skills system (end-to-end)**: self-grown/imported skills land in a
+  pending queue and REQUIRE explicit user approval (System 1). The AI can
+  never activate its own skills. Every skill gets a static safety scan
+  (forbidden imports/calls, network access, syntax errors) shown in the
+  /skills UI. Approved skills can be run from the UI or CLI - the static
+  scan is re-checked before every execution. Per-skill detail view shows
+  metadata, scan findings and file listings.
+  - CLI: `nexora skills list | approve | reject | scan | run <name>`
+- **Model management**: per-backend Load/Unload/Discover in the /models
+  UI with live 5-second refresh (HTMX). LiteRT model scanning, Ollama
+  and GGUF discovery.
+- **litert-lm integration**: official litert-lm CLI bridge
+  (`nexora litert list | install | import | run | serve | doctor`),
+  OpenAI-compatible local server (`nexora litert serve`, port 9379) and
+  `nexora start --with-litert-serve` to auto-attach it.
+- **Always-allow grants**: persisted to SQLite, survivable across
+  restarts, revocable from the /approvals UI (audited).
+- **Richer status**: `nexora status` and `GET /api/status` report
+  version, uptime, profile, per-backend model status, approval/grant and
+  skill counts. Home page shows a live status dashboard (5s polling).
+- **Local-first security**: local-only mode by default; network access
+  gated behind explicit approval; dangerous patterns can never be
+  whitelisted by grants.
