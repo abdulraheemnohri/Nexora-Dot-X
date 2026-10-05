@@ -18,6 +18,7 @@ from nexora.control import always_allow as grants_store
 from nexora.security.auth import AuthManager
 from nexora.security.middleware import COOKIE, AuthMiddleware
 from nexora.skills.manager import SkillManager
+from nexora.skills.runtime import run_skill
 from nexora.skills.scanner import scan_skill_files
 
 CHAT_JS = r"""const log = document.getElementById('chat-log');
@@ -263,9 +264,10 @@ def create_app():
         ready = models.ready_backend()
         return Titled("Models", H1("Model Management"),
                       P("Active backend: " + (ready or "none ready")),
-                      Table(Thead(Th("Backend"), Th("Status"),
-                                  Th("Model"), Th("Detail"), Th("Action")),
-                            Tr(Td(raw(_model_rows())))),
+                      Div(id="models-live",
+                          hx_get="/api/models/rows",
+                          hx_trigger="load, every 5s",
+                          hx_swap="innerHTML"),
                       Div(id="models-result"),
                       H2("Discover"),
                       Button("Find models", hx_post="/api/models/discover",
@@ -274,6 +276,12 @@ def create_app():
                       Div(id="discover-result"),
                       P("No model ready? Install one: "
                         "nexora litert install / models/gguf / ollama pull"))
+
+    @rt("/api/models/rows")
+    def models_rows():
+        return raw("<table><tr><th>Backend</th><th>Status</th>"
+                   "<th>Model</th><th>Detail</th><th>Action</th></tr>"
+                   + _model_rows() + "</table>")
 
     @rt("/api/models/scan", methods=["POST"])
     def models_scan():
@@ -358,11 +366,32 @@ def create_app():
                 + '<input type="hidden" name="name" value="'
                 + str(s.get("name", "")) + '"><button>Scan</button></form>'
                 + "</td></tr>")
-        act_rows = "".join(
-            "<tr><td>" + str(s.get("name", "?")) + "</td><td>"
-            + str(s.get("description", ""))
-            + "</td><td>active</td><td></td></tr>"
-            for s in active)
+        act_rows = ""
+        for s in active:
+            sc = scan_skill_files(s)
+            if sc["ok"]:
+                scan_note = ("clean (" + str(sc["files_scanned"])
+                             + " file(s))")
+            else:
+                scan_note = ("<span style='color:#e66'>"
+                             + "; ".join(sc["issues"])[:200]
+                             .replace("<", "&lt;") + "</span>")
+            act_rows += (
+                "<tr><td>" + str(s.get("name", "?")) + "</td><td>"
+                + str(s.get("description", "")) + "</td><td>active</td><td>"
+                + scan_note + "</td><td>"
+                + '<form hx_post="/api/skills/run" '
+                + 'hx_target="#skills-result" hx_swap="innerHTML">'
+                + '<input type="hidden" name="name" value="'
+                + str(s.get("name", "")) + '">'
+                + '<input name="payload" placeholder="input text">'
+                + "<button>Run</button></form>"
+                + "</td><td>"
+                + '<form hx_post="/api/skills/scan" '
+                + 'hx_target="#skills-result" hx_swap="innerHTML">'
+                + '<input type="hidden" name="name" value="'
+                + str(s.get("name", "")) + '"><button>Scan</button></form>'
+                + "</td></tr>")
         return Titled("Skills", H1("Skills"),
                       H2("Pending approval"),
                       (Table(Thead(Th("Name"), Th("Description"),
@@ -373,12 +402,14 @@ def create_app():
                        else P("No skills awaiting approval.")),
                       H2("Active skills"),
                       (Table(Thead(Th("Name"), Th("Description"),
-                                   Th("Status"), Th("")),
+                                   Th("Status"), Th("Static scan"),
+                                   Th("Run"), Th("")),
                              Tr(Td(raw(act_rows))))
                        if active else P("No active skills yet.")),
                       P("Self-grown skills require explicit user approval - "
-                        "the AI cannot activate them (System 1). The static "
-                        "scan flags forbidden imports/calls and network use."),
+                        "the AI cannot activate them (System 1). Only "
+                        "approved skills can be run; the static scan is "
+                        "re-checked before every execution."),
                       Div(id="skills-result"))
 
     @rt("/api/skills/approve", methods=["POST"])
@@ -410,6 +441,19 @@ def create_app():
                        for i in r["issues"])
         return Div(P("Findings for " + name + ":", style="color:#e66"),
                    Ul(raw(items)))
+
+    @rt("/api/skills/run", methods=["POST"])
+    def skill_run(name: str, payload: str = ""):
+        s = skills.inspect(name)
+        if not s:
+            return P("Skill not found: " + name, style="color:#e66")
+        r = run_skill(s, payload)
+        if not r.get("ok"):
+            return P("Run failed: "
+                     + str(r.get("error", "unknown error")),
+                     style="color:#e66")
+        return P("Result: " + str(r.get("result")).replace("<", "&lt;"),
+                 style="color:#4a4")
 
     @rt("/dots")
     def dots():
