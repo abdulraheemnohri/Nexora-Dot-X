@@ -1,4 +1,5 @@
 from time import time
+import asyncio
 
 from fasthtml.common import *
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -7,7 +8,7 @@ from starlette.datastructures import UploadFile
 from nexora import __version__
 from nexora.config import settings
 from nexora.database.runtime import SessionFactory
-from nexora.database.models import Dot, Task
+from nexora.database.models import Dot, Task, TaskStep, Approval
 from nexora.core.task_engine import TaskEngine
 from nexora.core.planner import Planner
 from nexora.core.chat_service import ChatService
@@ -19,6 +20,7 @@ from nexora.core.task_step_runner import TaskStepRunner
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
+from nexora.database import repositories as repo
 from nexora.security.auth import AuthManager
 from nexora.security.middleware import COOKIE, AuthMiddleware, websocket_authenticated
 from nexora.skills.manager import SkillManager
@@ -942,6 +944,32 @@ def create_app():
         await worker_runtime.worker.enqueue(task.id, priority=task.priority or 1)
         return task
 
+    async def _resume_approved_task(approval_id: str):
+        """Execute an approved step and requeue its durable task."""
+        approval = repo.get_by_id(Approval, approval_id)
+        if approval is None:
+            return None, "Approval not found"
+        if not approval.task_id or not approval.step_id:
+            return None, "Approval is not linked to a task step"
+        outcome = await asyncio.to_thread(step_runner.executor.resume, approval_id)
+        step = repo.get_by_id(TaskStep, approval.step_id)
+        if step is None:
+            return outcome, "Linked task step not found"
+        if outcome.ok:
+            tasks.checkpoint(step.id, status="completed", output=outcome.output)
+            task = tasks.get(approval.task_id)
+            if task is None:
+                return outcome, "Linked task not found"
+            if tasks.next_resumable_step(task.id) is None:
+                tasks.set_status(task.id, "COMPLETED", result=outcome.output)
+            else:
+                tasks.set_status(task.id, "QUEUED")
+                await worker_runtime.worker.enqueue(task.id, priority=task.priority or 1)
+            return outcome, ""
+        tasks.checkpoint(step.id, status="failed", error=outcome.output)
+        tasks.set_status(approval.task_id, "FAILED", error=outcome.output)
+        return outcome, outcome.output
+
     # ---- approvals ---------------------------------------------------------
 
     def _pending_cards():
@@ -1007,13 +1035,17 @@ def create_app():
         return raw("".join(cards))
 
     @rt("/api/approvals/{approval_id}/approve", methods=["POST"])
-    def approve(approval_id: str):
-        approvals.decide(approval_id, True)
+    async def approve(approval_id: str):
+        approved = approvals.decide(approval_id, True)
+        if approved is not None:
+            await _resume_approved_task(approval_id)
         return RedirectResponse("/approvals", status_code=303)
 
     @rt("/api/approvals/{approval_id}/always", methods=["POST"])
-    def always_allow(approval_id: str):
-        approvals.decide(approval_id, True, always=True)
+    async def always_allow(approval_id: str):
+        approved = approvals.decide(approval_id, True, always=True)
+        if approved is not None:
+            await _resume_approved_task(approval_id)
         return RedirectResponse("/approvals", status_code=303)
 
     @rt("/api/approvals/{approval_id}/reject", methods=["POST"])
