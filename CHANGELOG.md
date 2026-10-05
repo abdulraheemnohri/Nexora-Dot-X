@@ -3,6 +3,15 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.48] - 2026-10-05
+
+### Changed
+- CLI: `nexora status` now also reports total and
+  enabled Dot counts plus the total memory record
+  count, giving a one-line health overview of every
+  subsystem (models, approvals, grants, skills,
+  tasks, dots, memories).
+
 ## [2.47] - 2026-10-05
 
 ### Added

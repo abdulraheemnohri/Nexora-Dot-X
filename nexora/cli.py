@@ -57,6 +57,14 @@ def status():
         from nexora.core.task_engine import TaskEngine
         te = TaskEngine()
         typer.echo(f"tasks: {len(te.list(limit=500))} total")
+        from nexora.database.runtime import SessionFactory
+        from nexora.database.models import Dot, MemoryRecord
+        with SessionFactory() as s:
+            n_dots = s.query(Dot).count()
+            n_enabled = s.query(Dot).filter_by(enabled=True).count()
+            n_memories = s.query(MemoryRecord).count()
+        typer.echo(f"dots: {n_dots} total, {n_enabled} enabled")
+        typer.echo(f"memories: {n_memories}")
     except Exception as e:
         typer.echo(f"runtime details unavailable: {e}")
 
