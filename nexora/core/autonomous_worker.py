@@ -8,6 +8,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 from nexora.core.task_engine import TaskEngine, TaskStatus
+from nexora.core.task_step_runner import WaitingApproval
 
 @dataclass
 class WorkerLimits:
@@ -54,6 +55,9 @@ class AutonomousWorker:
                 self.tasks.set_status(task_id, TaskStatus.COMPLETED.value, result=str(result))
             else:
                 self.tasks.set_status(task_id, TaskStatus.QUEUED.value)
+        except WaitingApproval as exc:
+            self.tasks.set_status(task_id, TaskStatus.WAITING_APPROVAL.value, error=str(exc))
+            self.tasks.checkpoint(step.id, status="pending", error=str(exc))
         except asyncio.CancelledError:
             self.tasks.checkpoint(step.id, status="cancelled", error="worker cancelled")
             self.tasks.set_status(task_id, TaskStatus.CANCELLED.value)
