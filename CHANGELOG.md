@@ -3,6 +3,14 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.46] - 2026-10-05
+
+### Added
+- Home page: the Approvals nav link now shows a live
+  pending count badge, e.g. "Approvals (3)", whenever
+  approvals are waiting, so pending work is visible
+  straight from the landing page.
+
 ## [2.45] - 2026-10-05
 
 ### Changed

@@ -89,6 +89,7 @@ def create_app():
 
     @rt("/")
     def home():
+        pending_approvals = len(approvals.pending())
         return Titled("Nexora Dot X",
                       H1("Nexora Dot X"),
                       P("Local-first autonomous AI control center"),
@@ -98,7 +99,10 @@ def create_app():
                           A("Models", href="/models"), " · ",
                           A("Skills", href="/skills"), " · ",
                           A("Tasks", href="/tasks"), " · ",
-                          A("Approvals", href="/approvals"), " · ",
+                          A("Approvals"
+                            + ((" (" + str(pending_approvals) + ")")
+                               if pending_approvals else ""),
+                            href="/approvals"), " · ",
                           A("Settings", href="/settings")),
                       H2("Live status"),
                       Div(id="status-live",
