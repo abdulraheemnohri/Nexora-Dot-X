@@ -8,6 +8,23 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.22] - 2026-10-05
+
+### Added
+- Home page live status dashboard: HTMX polling
+  (every 5s) via GET /api/status/card - shows version,
+  profile, uptime, local-only/auth flags, ready model,
+  per-backend model table, approval/grant/skill counts.
+
+## [2.21] - 2026-10-05
+
+### Added
+- Per-skill detail view in the /skills UI:
+  - Detail button on every pending and active skill
+  - POST /api/skills/detail shows the skill metadata
+    table, static scan findings and file listing
+    (names + sizes) from the skill directory.
+
 ## [0.2.0] - 2026-10-05
 
 ### Added
@@ -58,7 +75,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Richer /api/status: version, uptime, profile, auth and
   local-only flags, per-backend model list, pending approvals,
-  always-allow grants and pending skills counts.
+  always-allow grants and pending skills count
+s.
 
 ## [2.14] - 2026-10-05
 
@@ -126,7 +144,8 @@ e):
   - nexora litert import (HuggingFace imports, local-only gated)
   - nexora litert serve (OpenAI-compatible server, port 9379)
   - nexora litert run CLI options: --cli, --backend cpu|gpu,
-    --mtp, --attachment, --vision-backend, --audio-backend
+    --mtp, --attachment, 
+--vision-backend, --audio-backend
   - nexora/models/litert/cli_bridge.py with litert-lm -> uvx
     fallback resolution.
 
@@ -205,7 +224,8 @@ tart.
 
 ### Added
 - GGUF/Ollama providers, browser automation, Git/GitHub/HTTP
-  tools, MCP registry, Telegram/Discord/Slack/Email channels,
+ 
+ tools, MCP registry, Telegram/Discord/Slack/Email channels,
   persistent scheduler, simulate + chat CLI.
 
 ## [1.0] - 2026-10-01
