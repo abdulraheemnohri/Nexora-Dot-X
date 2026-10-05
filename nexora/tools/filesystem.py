@@ -12,7 +12,7 @@ def _resolve_checked(path: str) -> Path:
     if not p.is_absolute():
         p = settings.workspace_dir / p
     p = p.resolve()
-    if not any(str(p).startswith(str(r)) for r in ALLOWED_ROOTS):
+    if not any(p == root or root in p.parents for root in ALLOWED_ROOTS):
         raise PermissionError(f"path outside sandbox: {p}")
     return p
 
