@@ -52,7 +52,8 @@ def status():
 def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
                                       "--profile", "-p",
                                       help="battery-saver | balanced | performance"),
-          with_litert_serve: bool = typer.Option(
+          with_lit
+ert_serve: bool = typer.Option(
               False, "--with-litert-serve",
               help="Also start the official litert-lm OpenAI-compatible "
                    "server in the background (127.0.0.1:9379)"),
@@ -102,8 +103,7 @@ def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
             serve_proc.terminate()
             try:
                 serve_proc.wait(timeout=5)
-        
-    except Exception:
+            except Exception:
                 serve_proc.kill()
             typer.echo("litert-lm serve stopped.")
 
@@ -157,6 +157,7 @@ def litert_install(
         typer.echo(f"Already installed: {r['path']}")
     else:
         typer.echo(f"Installed: {r['path
+
 ']}")
 
 
@@ -200,7 +201,8 @@ def litert_run(
     backend: str = typer.Option(None, "--backend", "-b",
                                 help="cpu | gpu (official litert-lm CLI)"),
     speculative: bool = typer.Option(False, "--mtp/--no-mtp",
-                      
+                     
+ 
               help="Multi-Token Prediction (litert-lm CLI)"),
     attachment: str = typer.Option(None, "--attachment", "-a",
                                    help="Image/audio file to attach (litert-lm CLI)"),
@@ -242,7 +244,8 @@ def litert_run(
     # built-in Python runtime path
     from nexora.models.litert.engine import LiteRTProvider
 
-    
+  
+  
 provider = LiteRTProvider()
     scan_result = scan(str(settings.model_dir))
     models = scan_result["models"]
@@ -289,7 +292,8 @@ def litert_doctor():
         typer.echo("  -> pip install nexora-dot-x[litert]")
     from nexora.models.litert import cli_bridge
     prefix = cli_bridge.resolve_cli()
-    typer.echo(f"litert-lm CLI: {' '.join(prefix) if prefix else 
+    typer.echo(f"litert-lm CLI: {' '.join(prefix) if prefix el
+se 
 'not found'}")
     if not prefix:
         typer.echo("  -> pip install litert-lm  (or: uvx litert-lm)")
