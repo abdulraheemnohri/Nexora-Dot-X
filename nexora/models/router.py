@@ -18,6 +18,7 @@ class ModelRouter:
 
     def _register_defaults(self):
         for mod, cls in (("nexora.models.litert.engine", "LiteRTProvider"),
+                         ("nexora.models.litert.openai_local", "LiteRTServeProvider"),
                          ("nexora.models.gguf.engine", "GGUFProvider"),
                          ("nexora.models.ollama.engine", "OllamaProvider")):
             try:
