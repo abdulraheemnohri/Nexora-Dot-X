@@ -15,6 +15,8 @@ tasks = typer.Typer(no_args_is_help=True)
 cli.add_typer(tasks, name="tasks")
 dots = typer.Typer(no_args_is_help=True)
 cli.add_typer(dots, name="dots")
+approvals = typer.Typer(no_args_is_help=True)
+cli.add_typer(approvals, name="approvals")
 
 DEFAULT_LITERT_MODEL = "litert-community/gemma-4-E2B-it-litert-lm"
 DEFAULT_LITERT_FILE = "gemma-4-E2B-it.litertlm"
@@ -715,6 +717,45 @@ def dots_toggle(dot_id: str = typer.Argument(..., help="Dot ID")):
         state = "enabled" if d.enabled else "paused"
     typer.echo(f"Dot {state}: {d.name} ({dot_id})")
 
+
+
+@approvals.command("list")
+def approvals_list():
+    """List pending approvals."""
+    from nexora.control.approvals import ApprovalCenter
+    items = ApprovalCenter().pending()
+    if not items:
+        typer.echo("No pending approvals.")
+        return
+    for a in items:
+        typer.echo(f"[{a.risk}] {a.tool}:{a.action} - {a.id}")
+        if a.reason:
+            typer.echo(f"    {a.reason}")
+
+
+@approvals.command("approve")
+def approvals_approve(approval_id: str = typer.Argument(..., help="Approval ID"),
+                      always: bool = typer.Option(False, "--always", "-a",
+                                                 help="Also save an always-allow rule")):
+    """Approve a pending approval (optionally as an always-allow rule)."""
+    from nexora.control.approvals import ApprovalCenter
+    a = ApprovalCenter().approve(approval_id, always=always)
+    if a is None:
+        typer.secho("Approval not found: " + approval_id, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    suffix = " (always-allow rule saved)" if always else ""
+    typer.echo(f"Approved: {a.tool}:{a.action} ({approval_id}){suffix}")
+
+
+@approvals.command("reject")
+def approvals_reject(approval_id: str = typer.Argument(..., help="Approval ID")):
+    """Reject a pending approval."""
+    from nexora.control.approvals import ApprovalCenter
+    a = ApprovalCenter().reject(approval_id)
+    if a is None:
+        typer.secho("Approval not found: " + approval_id, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"Rejected: {a.tool}:{a.action} ({approval_id})")
 
 def main():
     cli()

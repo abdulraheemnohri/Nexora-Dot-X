@@ -8,6 +8,16 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.40] - 2026-10-05
+
+### Added
+- nexora approvals CLI group (human-in-the-loop decisions
+  from the terminal, matching the Approvals UI):
+  - nexora approvals list (pending approvals)
+  - nexora approvals approve <id> [--always] (also saves
+    a persistent always-allow rule)
+  - nexora approvals reject <id>
+
 ## [2.39] - 2026-10-05
 
 ### Added
