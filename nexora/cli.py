@@ -402,11 +402,23 @@ def skills_run(name: str = typer.Argument(..., help="Skill name"),
     typer.echo(str(r.get("result")))
 
 
+def _import_skill_from_dir(skill_src) -> dict:
+    """Shared import path: move an unpacked skill dir into pending."""
+    from nexora.skills.manager import SkillManager
+    return SkillManager().install_from_dir(skill_src)
+
+
 @skills.command("import")
 def skills_import(
-    archive: str = typer.Argument(..., help="Path to a skill .zip archive"),
+    archive: str = typer.Argument(None, help="Path to a skill .zip archive"),
+    url: str = typer.Option(None, "--url", "-u",
+                            help="Download the .zip from this URL"),
+    allow_network: bool = typer.Option(
+        False, "--allow-network", "-y",
+        help="Explicitly allow the network download (local-only "
+             "default: off)"),
 ):
-    """Import a skill from a .zip archive into the pending queue.
+    """Import a skill from a .zip archive (local file or URL).
 
     The imported skill lands in skills/.pending/ and must be approved
     explicitly (System 1) before it becomes active.
@@ -414,16 +426,36 @@ def skills_import(
     import shutil
     import tempfile
     from pathlib import Path
-    from nexora.skills.manager import SkillManager
 
-    src = Path(archive)
-    if not src.exists():
-        typer.secho("Archive not found: " + archive, fg=typer.colors.RED)
+    if not archive and not url:
+        typer.secho("Provide a .zip path or --url <url>.", fg=typer.colors.RED)
         raise typer.Exit(1)
+
     tmp_root = Path(tempfile.mkdtemp(prefix="nexora-skill-import-"))
     try:
+        if url:
+            if not allow_network:
+                typer.secho("URL import contacts the network - re-run "
+                            "with --allow-network to confirm.",
+                            fg=typer.colors.YELLOW)
+                raise typer.Exit(1)
+            import urllib.request
+            zip_path = tmp_root / "downloaded.zip"
+            typer.echo(f"Downloading {url} ...")
+            try:
+                with urllib.request.urlopen(url, timeout=30) as resp:
+                    zip_path.write_bytes(resp.read())
+            except Exception as e:
+                typer.secho("Download failed: " + str(e), fg=typer.colors.RED)
+                raise typer.Exit(1)
+        else:
+            zip_path = Path(archive)
+            if not zip_path.exists():
+                typer.secho("Archive not found: " + archive,
+                            fg=typer.colors.RED)
+                raise typer.Exit(1)
         try:
-            shutil.unpack_archive(str(src), str(tmp_root), "zip")
+            shutil.unpack_archive(str(zip_path), str(tmp_root), "zip")
         except Exception as e:
             typer.secho("Not a valid .zip archive: " + str(e),
                         fg=typer.colors.RED)
@@ -435,7 +467,7 @@ def skills_import(
             raise typer.Exit(1)
         skill_src = meta_files[0].parent
         try:
-            r = SkillManager().install_from_dir(skill_src)
+            r = _import_skill_from_dir(skill_src)
         except Exception as e:
             typer.secho("Import failed: " + str(e), fg=typer.colors.RED)
             raise typer.Exit(1)
