@@ -5,7 +5,7 @@ platform metadata, and safe dispatch. Handlers may still apply tool-specific
 policy (for example terminal policy) as a defense-in-depth layer.
 """
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Awaitable
 
 
 @dataclass
