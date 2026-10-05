@@ -8,23 +8,6 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
-## [2.24] - 2026-10-05
-
-### Added
-- README "0.2.0 Highlights" section: skills system end-to-end
-  (approval gate, static scan, run + CLI), model management UI,
-  litert-lm integration, always-allow grants, richer status,
-  local-first security.
-
-## [2.23] - 2026-10-05
-
-### Added
-- nexora skills CLI subcommands:
-  - list (with --pending filter)
-  - approve / reject (user approval gate from the terminal)
-  - scan (static safety scan on a skill's files)
-  - run (execute an approved skill; scan re-checked first)
-
 ## [2.22] - 2026-10-05
 
 ### Added
