@@ -52,7 +52,8 @@ def status():
 def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
                                       "--profile", "-p",
                                       help="battery-saver | balanced | performance"),
-          with_litert_serve: bool = typer.Option(
+          with_lit
+ert_serve: bool = typer.Option(
               False, "--with-litert-serve",
               help="Also start the official litert-lm OpenAI-compatible "
                    "server in the background (127.0.0.1:9379)"),
@@ -79,8 +80,7 @@ def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
                         "attachment. Install with: pip install litert-lm",
                         fg=typer.colors.YELLOW)
         else:
-            typer.ec
-ho(f"litert-lm serve attached on 127.0.0.1:{serve_port}/v1 "
+            typer.echo(f"litert-lm serve attached on 127.0.0.1:{serve_port}/v1 "
                         f"(pid {serve_proc.pid})")
 
     async def serve():
@@ -140,8 +140,7 @@ def litert_install(
         False, "--allow-network", "-y",
         help="Explicitly allow the network download (local-only default: off)"),
 ):
-    """Download the built-in LiteRT-LM mode
-l (gemma-4-E2B-it-litert-lm by default)."""
+    """Download the built-in LiteRT-LM model (gemma-4-E2B-it-litert-lm by default)."""
     from nexora.models.litert.download import download_default_model
     typer.echo(f"Downloading {repo} ...")
     try:
@@ -184,8 +183,7 @@ def litert_import(
         raise typer.Exit(1)
     except RuntimeError as e:
         typer.secho(str(e), fg=typer.colors.RED)
-        raise typer.Exit
-(1)
+        raise typer.Exit(1)
     if result.returncode != 0:
         typer.secho("litert-lm import failed: " + (result.stderr or result.stdout),
                     fg=typer.colors.RED)
@@ -201,7 +199,7 @@ def litert_run(
     backend: str = typer.Option(None, "--backend", "-b",
                                 help="cpu | gpu (official litert-lm CLI)"),
     speculative: bool = typer.Option(False, "--mtp/--no-mtp",
-                                     help="Multi-Token Prediction (litert-lm CLI)"),
+                                    help="Multi-Token Prediction (litert-lm CLI)"),
     attachment: str = typer.Option(None, "--attachment", "-a",
                                    help="Image/audio file to attach (litert-lm CLI)"),
     vision_backend: str = typer.Option(None, "--vision-backend",
@@ -225,8 +223,7 @@ def litert_run(
                         fg=typer.colors.YELLOW)
             raise typer.Exit(1)
         try:
-            args = cli_br
-idge.build_run_args(
+            args = cli_bridge.build_run_args(
                 ref, prompt=prompt, backend=backend, speculative=speculative,
                 attachment=attachment, vision_backend=vision_backend,
                 audio_backend=audio_backend)
@@ -242,6 +239,7 @@ idge.build_run_args(
         return
     # built-in Python runtime path
     from nexora.models.litert.engine import LiteRTProvider
+
     provider = LiteRTProvider()
     scan_result = scan(str(settings.model_dir))
     models = scan_result["models"]
@@ -270,8 +268,7 @@ def litert_serve(
     from nexora.models.litert import cli_bridge
     args = cli_bridge.build_serve_args(host=host, port=port, verbose=verbose)
     typer.echo(f"litert-lm OpenAI-compatible server on http://{host}:{port}/v1")
-    typer.ec
-ho("Endpoints: GET /v1/models, POST /v1/chat/completions (Ctrl+C to stop)")
+    typer.echo("Endpoints: GET /v1/models, POST /v1/chat/completions (Ctrl+C to stop)")
     try:
         rc = cli_bridge.serve_cli(args)
     except RuntimeError as e:
