@@ -6,8 +6,8 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from nexora import __version__
 from nexora.config import settings
 from nexora.database.runtime import SessionFactory
-from nexora.database.models import Dot
-from nexora.core.task_service import TaskService
+from nexora.database.models import Dot, Task
+from nexora.core.task_engine import TaskEngine
 from nexora.core.planner import Planner
 from nexora.core.chat_service import ChatService
 from nexora.core.memory_service import MemoryService
@@ -74,7 +74,7 @@ START_TIME = time()
 
 def create_app():
     app, rt = fast_app()
-    tasks = TaskService(SessionFactory)
+    tasks = TaskEngine()
     planner = Planner()
     approvals = ApprovalCenter()
     chat = ChatService()
@@ -551,6 +551,8 @@ def create_app():
         return P("Result: " + str(r.get("result")).replace("<", "&lt;"),
                  style="color:#4a4")
 
+    # ---- dots ---------------------------------------------------------------
+
     @rt("/dots")
     def dots():
         with SessionFactory() as s:
@@ -570,8 +572,44 @@ def create_app():
                                  action="/api/dots/toggle",
                                  method="post"),
                             Input(type="hidden", name="dot_id",
-                                  value=d.id))
+                                  value=d.id),
+                            P(A("View details", href="/dots/" + d.id)))
                         for d in items))
+
+    @rt("/dots/{dot_id}")
+    def dot_detail(dot_id: str):
+        """Dot detail: profile plus all of its tasks."""
+        with SessionFactory() as s:
+            d = s.get(Dot, dot_id)
+            if d is None:
+                return Titled("Dot", H1("Dot not found: " + dot_id))
+            task_rows = list(s.query(Task)
+                             .filter_by(dot_id=dot_id)
+                             .order_by(Task.created_at.desc()))
+        rows = "".join(
+            "<tr><td>" + k + "</td><td>"
+            + str(v).replace("<", "&lt;") + "</td></tr>"
+            for k, v in [("ID", d.id), ("Name", d.name),
+                         ("Mission", d.mission or ""),
+                         ("Description", d.description or ""),
+                         ("Personality", d.personality or ""),
+                         ("Model", d.model or ""),
+                         ("Status", d.status or ""),
+                         ("Enabled", "yes" if d.enabled else "no"),
+                         ("Workspace", d.workspace or ""),
+                         ("Created", d.created_at)])
+        tasks_html = ""
+        for t in task_rows:
+            goal = str(t.goal).replace("<", "&lt;")
+            tasks_html += ("<li>[" + str(t.status) + "] "
+                           + goal + " · " + str(t.id) + "</li>")
+        return Titled("Dot", H1(d.name),
+                      Table(Thead(Th("Field"), Th("Value")),
+                            Tr(Td(raw(rows)))),
+                      H2("Tasks"),
+                      Ul(raw(tasks_html)) if tasks_html
+                      else P("No tasks for this Dot yet."),
+                      P(A("Back to Dots", href="/dots")))
 
     @rt("/api/dots", methods=["POST"])
     def create_dot(name: str, mission: str = ""):
@@ -593,6 +631,25 @@ def create_app():
             s.commit()
         return RedirectResponse("/dots", status_code=303)
 
+    # ---- tasks --------------------------------------------------------------
+
+    def _task_filter_links():
+        return Div(
+            A("All", hx_get="/api/tasks/rows",
+              hx_target="#tasks-live", hx_swap="innerHTML"),
+            " · ",
+            A("RUNNING", hx_get="/api/tasks/rows?status=RUNNING",
+              hx_target="#tasks-live", hx_swap="innerHTML"),
+            " · ",
+            A("COMPLETED", hx_get="/api/tasks/rows?status=COMPLETED",
+              hx_target="#tasks-live", hx_swap="innerHTML"),
+            " · ",
+            A("FAILED", hx_get="/api/tasks/rows?status=FAILED",
+              hx_target="#tasks-live", hx_swap="innerHTML"),
+            " · ",
+            A("CANCELLED", hx_get="/api/tasks/rows?status=CANCELLED",
+              hx_target="#tasks-live", hx_swap="innerHTML"))
+
     @rt("/tasks")
     def task_page():
         return Titled("Tasks", H1("Tasks"),
@@ -602,6 +659,9 @@ def create_app():
                                  required=True),
                            Button("Queue task"), action="/api/tasks",
                            method="post"),
+                      H2("Filter"),
+                      _task_filter_links(),
+                      H2("Tasks"),
                       Div(id="tasks-live",
                           hx_get="/api/tasks/rows",
                           hx_trigger="load, every 5s",
@@ -609,10 +669,13 @@ def create_app():
                       Div(id="tasks-result"))
 
     @rt("/api/tasks/rows")
-    def tasks_rows():
-        """Live task table fragment (HTMX polling every 5s)."""
+    def tasks_rows(status: str = ""):
+        """Live task table fragment (HTMX polling every 5s).
+
+        Optional ?status= filter narrows the list to one status.
+        """
         rows = ""
-        for t in tasks.list():
+        for t in tasks.list(status=(status or None)):
             goal = str(t.goal).replace("<", "&lt;")
             rows += ("<tr><td>" + goal + "</td><td>"
                      + str(t.status) + "</td><td>"
@@ -623,7 +686,9 @@ def create_app():
                      + str(t.id) + '"><button>Detail</button></form>'
                      + "</td></tr>")
         if not rows:
-            return P("No tasks yet.")
+            return P("No tasks"
+                     + ((" with status " + status) if status else "")
+                     + ".")
         return raw("<table><tr><th>Goal</th><th>Status</th><th>ID</th>"
                    "<th></th></tr>" + rows + "</table>")
 
@@ -669,12 +734,13 @@ def create_app():
         return RedirectResponse("/tasks", status_code=303)
 
     async def runtime_submit(dot_id, goal):
-        task = tasks.create(dot_id, goal)
+        task = tasks.create(goal, dot_id=dot_id)
         plan = planner.plan(goal)
         if not plan:
             tasks.set_status(task.id, "FAILED",
                              "Planner returned no steps")
             return task
+        tasks.set_plan(task.id, plan)
         tasks.set_status(task.id, "PLANNING")
         tasks.set_status(task.id, "RUNNING")
         tasks.set_status(task.id, "COMPLETED",
