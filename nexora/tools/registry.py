@@ -33,10 +33,13 @@ class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, ToolSpec] = {}
         self._handlers: dict[str, Callable] = {}
+        self._async_handlers: dict[str, Callable] = {}
 
-    def register(self, spec: ToolSpec, handler=None):
+    def register(self, spec: ToolSpec, handler=None, async_handler=None):
         self._tools[spec.id] = spec
         self._handlers[spec.id] = handler
+        if async_handler is not None:
+            self._async_handlers[spec.id] = async_handler
 
     def get(self, tool_id: str) -> ToolSpec | None:
         return self._tools.get(tool_id)
@@ -120,3 +123,24 @@ class ToolRegistry:
         if isinstance(result, dict):
             return result
         return {"ok": True, "output": str(result)}
+
+    async def run_async(self, tool_id: str, action: str | dict) -> dict:
+        """Async-native dispatch; sync handlers remain supported."""
+        spec = self._tools.get(tool_id)
+        if spec is None:
+            return {"ok": False, "output": f"unknown tool: {tool_id}"}
+        if not spec.enabled:
+            return {"ok": False, "output": f"tool disabled: {tool_id}"}
+        arguments = {"action": action} if isinstance(action, str) else action
+        error = self.validate(tool_id, arguments)
+        if error:
+            return {"ok": False, "output": f"invalid tool arguments: {error}"}
+        try:
+            handler = self._async_handlers.get(tool_id)
+            if handler is not None:
+                result = await handler(action)
+            else:
+                result = self._handlers.get(tool_id)(action) if self._handlers.get(tool_id) else {"ok": True, "output": f"{tool_id}: {action} (no handler bound)"}
+            return result if isinstance(result, dict) else {"ok": True, "output": str(result)}
+        except Exception as exc:
+            return {"ok": False, "output": f"{tool_id} error: {exc}"}
