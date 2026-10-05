@@ -17,6 +17,7 @@ from nexora.core.model_service import ModelService
 from nexora.core.worker_runtime import WorkerRuntime
 from nexora.core.autonomous_worker import AutonomousWorker
 from nexora.core.task_step_runner import TaskStepRunner
+from nexora.tools.runtime import build_registry
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
@@ -92,7 +93,8 @@ def create_app():
     auth = AuthManager()
     skills = SkillManager()
     worker_runtime = WorkerRuntime(AutonomousWorker(tasks))
-    step_runner = TaskStepRunner()
+    tool_registry = build_registry()
+    step_runner = TaskStepRunner(__import__("nexora.core.executor", fromlist=["Executor"]).Executor(tool_registry))
 
     async def _worker_executor(step):
         return await step_runner(step)
