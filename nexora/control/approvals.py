@@ -1,7 +1,7 @@
 """Human-in-the-loop approval center.
 
-Approvals are single-use execution grants. Once resumed, an approved record is
-marked executed so it cannot be replayed.
+Approvals are single-use execution grants. Execution uses an atomic claim so
+two workers cannot consume the same approved action concurrently.
 """
 import time
 
@@ -54,12 +54,24 @@ class ApprovalCenter:
             a, status="rejected", decided_at=a.decided_at
         )
 
+    def claim(self, approval_id: str) -> Approval | None:
+        """Atomically claim an approved approval for one execution attempt."""
+        return repo.claim_approval(Approval, approval_id)
+
     def mark_executed(self, approval_id: str) -> Approval | None:
         a = repo.get_by_id(Approval, approval_id)
-        if a is None or a.status != "approved":
+        if a is None or a.status != "executing":
             return None
         return repo.update_fields(
             a, status="executed", decided_at=a.decided_at or time.time()
+        )
+
+    def mark_failed(self, approval_id: str) -> Approval | None:
+        a = repo.get_by_id(Approval, approval_id)
+        if a is None or a.status != "executing":
+            return None
+        return repo.update_fields(
+            a, status="failed", decided_at=a.decided_at or time.time()
         )
 
     def decide(self, approval_id: str, approved: bool, always: bool = False):
