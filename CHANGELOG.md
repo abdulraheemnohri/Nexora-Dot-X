@@ -8,6 +8,26 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.36] - 2026-10-05
+
+### Added
+- Dot detail page now has a "Queue a task" form (hidden dot_id,
+  goal input) - new tasks can be queued directly from the Dot.
+
+## [2.35] - 2026-10-05
+
+### Added
+- Cancel button on every non-terminal task row in the /tasks live
+  table (POST /api/tasks/cancel sets status CANCELLED).
+  Completed/Failed/Cancelled tasks show no cancel button.
+
+## [2.34] - 2026-10-05
+
+### Added
+- nexora skills import --url <url>: downloads a skill .zip from a
+  URL and imports it into the pending queue. Network access is
+  opt-in: without --allow-network the command refuses to contact
+  the network (local-only default preserved).
 ## [2.33] - 2026-10-05
 
 ### Added
@@ -60,7 +80,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - nexora skills import <archive.zip>: unpacks the archive to a
   temp dir, locates skill.json, and imports the skill into the
-  pending queue (skills/.pending). Imported skills still require
+  pending queue (skills/.pendin
+g). Imported skills still require
   explicit user approval before they run (System 1).
 
 ## [2.23] - [2.27] - 2026-10-05
@@ -117,7 +138,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
     approved skill's tools/main.py and calls run(payload)
   - security: only active (user-approved) skills run;
     the static safety scan is re-checked before execution
-  - Run button with input payload in the /skills UI
+  - Run button with input payload in 
+the /skills UI
   - POST /api/skills/scan and POST /api/skills/run routes
   - Static scan column for active skills too
   - tests/test_skill_runtime.py (5 tests)
@@ -186,7 +208,8 @@ e models
 - Always-allow grants persisted to SQLite (always_allow tabl
 e):
   survive restarts, whitespace-normalized, revocable.
-- nexora.control.always_allow module (save/load/revoke/list)
+- nexora.control.alw
+ays_allow module (save/load/revoke/list)
   and grants reload at startup.
 
 ### Fixed
@@ -259,7 +282,8 @@ rve OpenAI-compatible server
 tart.
 - ChatService, device profiles, background worker.
 
-## [2.3] - 2026-10-03
+## [2.3] - 2026
+-10-03
 
 ### Added
 - Memory/models UI pages, chat JS streaming client.
