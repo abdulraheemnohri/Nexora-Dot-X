@@ -26,6 +26,11 @@ class Executor:
 
     def execute(self, step: dict, *, bot_id=None, task_id=None,
                 step_id=None, dry_run=False) -> StepOutcome:
+        """Compatibility wrapper for non-async callers."""
+        import asyncio
+        return asyncio.run(self.execute_async(step, bot_id=bot_id, task_id=task_id, step_id=step_id, dry_run=dry_run))
+
+    async def execute_async
         tool = step.get("tool") or step.get("kind", "work")
         action = step.get("action") or step.get("description", "")
         decision = self.policy.evaluate(tool, action, dry_run=dry_run)
