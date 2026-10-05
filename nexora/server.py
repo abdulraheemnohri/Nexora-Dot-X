@@ -451,6 +451,23 @@ def create_app():
                         "re-checked before every execution."),
                       Div(id="skills-result"))
 
+    @rt("/api/skills")
+    def api_skills():
+        """Machine-readable skill list for integrations."""
+        def _clean(entries):
+            out = []
+            for s in entries:
+                item = {k: v for k, v in s.items()
+                        if not str(k).startswith("_")}
+                sc = scan_skill_files(s)
+                item["static_scan_ok"] = sc["ok"]
+                item["static_scan_issues"] = sc["issues"]
+                item["files_scanned"] = sc["files_scanned"]
+                out.append(item)
+            return out
+        return {"active": _clean(skills.scan()),
+                "pending": _clean(skills.pending())}
+
     @rt("/api/skills/approve", methods=["POST"])
     def skill_approve(name: str):
         r = skills.approve(name)
@@ -638,13 +655,21 @@ def create_app():
 
     @rt("/approvals")
     def approval_page():
-        cards = _pending_cards()
         return Titled("Approvals", H1("Approval Center"),
                       H2("Pending"),
-                      Div(raw("".join(cards)))
-                      if cards else P("No pending approvals."),
+                      Div(id="approvals-live",
+                          hx_get="/api/approvals/pending",
+                          hx_trigger="load, every 5s",
+                          hx_swap="innerHTML"),
                       H2("Always-allow rules (persisted)"),
                       Div(_grants_table(), id="grants-result"))
+
+    @rt("/api/approvals/pending")
+    def approvals_pending_fragment():
+        cards = _pending_cards()
+        if not cards:
+            return P("No pending approvals.")
+        return raw("".join(cards))
 
     @rt("/api/approvals/{approval_id}/approve", methods=["POST"])
     def approve(approval_id: str):
