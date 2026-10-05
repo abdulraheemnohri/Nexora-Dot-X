@@ -46,6 +46,72 @@ class Task(Base):
     updated_at = Column(Float, default=now, onupdate=now)
 
 
+class Project(Base):
+    __tablename__ = "projects"
+    id = Column(String, primary_key=True, default=uid)
+    name = Column(String, nullable=False)
+    description = Column(Text, default="")
+    workspace = Column(String, default="")
+    status = Column(String, default="active")
+    created_at = Column(Float, default=now)
+    updated_at = Column(Float, default=now, onupdate=now)
+
+
+class Session(Base):
+    __tablename__ = "sessions"
+    id = Column(String, primary_key=True, default=uid)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True)
+    dot_id = Column(String, ForeignKey("dots.id"), nullable=True)
+    title = Column(String, default="")
+    status = Column(String, default="active")
+    created_at = Column(Float, default=now)
+    updated_at = Column(Float, default=now, onupdate=now)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    id = Column(String, primary_key=True, default=uid)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False)
+    role = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    metadata_json = Column(Text, default="{}")
+    created_at = Column(Float, default=now)
+
+
+class Artifact(Base):
+    __tablename__ = "artifacts"
+    id = Column(String, primary_key=True, default=uid)
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True)
+    task_id = Column(String, ForeignKey("tasks.id"), nullable=True)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=True)
+    name = Column(String, nullable=False)
+    kind = Column(String, default="file")
+    path = Column(Text, default="")
+    content = Column(Text, default="")
+    checksum = Column(String, default="")
+    metadata_json = Column(Text, default="{}")
+    created_at = Column(Float, default=now)
+    updated_at = Column(Float, default=now, onupdate=now)
+
+
+class TaskStep(Base):
+    __tablename__ = "task_steps"
+    id = Column(String, primary_key=True, default=uid)
+    task_id = Column(String, ForeignKey("tasks.id"), nullable=False)
+    step_index = Column(Integer, nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String, default="pending")
+    input_json = Column(Text, default="{}")
+    output = Column(Text, default="")
+    error = Column(Text, default="")
+    attempts = Column(Integer, default=0)
+    started_at = Column(Float, nullable=True)
+    completed_at = Column(Float, nullable=True)
+    checkpoint_json = Column(Text, default="{}")
+    created_at = Column(Float, default=now)
+    updated_at = Column(Float, default=now, onupdate=now)
+
+
 class Approval(Base):
     __tablename__ = "approvals"
     id = Column(String, primary_key=True, default=uid)
