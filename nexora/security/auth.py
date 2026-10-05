@@ -1,29 +1,30 @@
-"""Configurable authentication: password hash + session tokens + API tokens.
+"""Central authentication service for Nexora web, API, and WebSocket access.
 
-For local single-user deployments auth can stay disabled
-(NEXORA_AUTH_ENABLED=false); when enabled, every web session requires login
-and API calls need a bearer token.
+Sessions are process-global by design so middleware, route handlers, and
+WebSocket handlers validate the same login token. API tokens remain compatible
+with the existing environment-based deployment.
 """
 import hashlib
 import hmac
 import os
 import secrets
 import time
+from typing import Any
 
 
 class AuthManager:
-    SESSION_TTL = 60 * 60 * 12  # 12h
+    SESSION_TTL = 60 * 60 * 12
+    _sessions: dict[str, float] = {}
 
     def __init__(self, password_hash_env: str = "NEXORA_SECRET_PASSWORD_HASH"):
-        self._sessions: dict[str, float] = {}
-
-    # ---- password handling ----
+        self.password_hash_env = password_hash_env
 
     @staticmethod
     def hash_password(password: str, salt: str | None = None) -> str:
         salt = salt or secrets.token_hex(16)
-        digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(),
-                                     100_000).hex()
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), salt.encode(), 100_000
+        ).hex()
         return salt + "$" + digest
 
     @staticmethod
@@ -32,14 +33,13 @@ class AuthManager:
             salt, digest = stored.split("$", 1)
         except ValueError:
             return False
-        check = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(),
-                                    100_000).hex()
+        check = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), salt.encode(), 100_000
+        ).hex()
         return hmac.compare_digest(check, digest)
 
-    # ---- sessions ----
-
     def login(self, password: str) -> str | None:
-        stored = os.getenv("NEXORA_SECRET_PASSWORD_HASH", "")
+        stored = os.getenv(self.password_hash_env, "")
         if not stored or not self.verify_password(password, stored):
             return None
         token = secrets.token_urlsafe(32)
@@ -47,6 +47,8 @@ class AuthManager:
         return token
 
     def valid_session(self, token: str) -> bool:
+        if not token:
+            return False
         exp = self._sessions.get(token)
         if exp is None:
             return False
@@ -55,10 +57,11 @@ class AuthManager:
             return False
         return True
 
-    def logout(self, token: str):
+    def logout(self, token: str) -> None:
         self._sessions.pop(token, None)
 
-    # ---- API tokens ----
+    def authenticate(self, *, session: str = "", bearer: str = "") -> bool:
+        return self.valid_session(session) or self.valid_api_token(bearer)
 
     @staticmethod
     def issue_api_token() -> str:
@@ -67,4 +70,10 @@ class AuthManager:
     @staticmethod
     def valid_api_token(provided: str) -> bool:
         expected = os.getenv("NEXORA_SECRET_API_TOKEN", "")
-        return bool(expected) and hmac.compare_digest(provided, expected)
+        return bool(expected) and bool(provided) and hmac.compare_digest(
+            provided, expected
+        )
+
+    @classmethod
+    def clear_sessions(cls) -> None:
+        cls._sessions.clear()
