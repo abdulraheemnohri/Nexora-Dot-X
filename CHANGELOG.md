@@ -3,6 +3,14 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.47] - 2026-10-05
+
+### Added
+- Skills page: new "Export skills (JSON)" link plus a
+  /api/skills/export endpoint that returns the full
+  active and pending skill metadata as JSON, so skills
+  can be backed up or moved between installs.
+
 ## [2.46] - 2026-10-05
 
 ### Added

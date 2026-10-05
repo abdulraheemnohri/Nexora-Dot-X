@@ -494,6 +494,8 @@ def create_app():
                                    Th("Run"), Th(""), Th("")),
                              Tr(Td(raw(act_rows))))
                        if active else P("No active skills yet.")),
+                      P(A("Export skills (JSON)",
+                          href="/api/skills/export")),
                       P("Self-grown skills require explicit user approval - "
                         "the AI cannot activate them (System 1). Only "
                         "approved skills can be run; the static scan is "
@@ -566,6 +568,16 @@ def create_app():
             return out
         return {"active": _clean(skills.scan()),
                 "pending": _clean(skills.pending())}
+
+    @rt("/api/skills/export")
+    def skills_export():
+        """Export all skills (active + pending) as JSON."""
+        def _plain(entries):
+            return [{k: v for k, v in s.items()
+                     if not str(k).startswith("_")}
+                    for s in entries]
+        return {"active": _plain(skills.scan()),
+                "pending": _plain(skills.pending())}
 
     @rt("/api/skills/approve", methods=["POST"])
     def skill_approve(name: str):
