@@ -7,6 +7,8 @@ from nexora.control.policy import PolicyEngine, Decision
 from nexora.control.approvals import ApprovalCenter
 from nexora.control.audit import audit
 from nexora.core.events import bus
+from nexora.database import repositories as repo
+from nexora.database.models import Approval
 
 
 class StepOutcome:
@@ -68,9 +70,6 @@ class Executor:
         output is consulted during resume. If a future version adds mutable
         approvals, it must add an action digest and verify it here.
         """
-        from nexora.database import repositories as repo
-        from nexora.database.models import Approval
-
         approval = repo.get_by_id(Approval, approval_id)
         if approval is None:
             return StepOutcome(False, "approval not found")
