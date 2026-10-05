@@ -11,6 +11,8 @@ litert = typer.Typer(no_args_is_help=True)
 cli.add_typer(litert, name="litert")
 skills = typer.Typer(no_args_is_help=True)
 cli.add_typer(skills, name="skills")
+tasks = typer.Typer(no_args_is_help=True)
+cli.add_typer(tasks, name="tasks")
 
 DEFAULT_LITERT_MODEL = "litert-community/gemma-4-E2B-it-litert-lm"
 DEFAULT_LITERT_FILE = "gemma-4-E2B-it.litertlm"
@@ -46,6 +48,9 @@ def status():
         sm = SkillManager()
         typer.echo(f"skills: {len(sm.pending())} pending, "
                    f"{len(sm.scan())} active")
+        from nexora.core.task_engine import TaskEngine
+        te = TaskEngine()
+        typer.echo(f"tasks: {len(te.list(limit=500))} total")
     except Exception as e:
         typer.echo(f"runtime details unavailable: {e}")
 
@@ -466,6 +471,68 @@ def skills_export(name: str = typer.Argument(..., help="Skill name"),
     dest.mkdir(parents=True, exist_ok=True)
     archive = shutil.make_archive(str(dest / name), "zip", skill_dir)
     typer.echo(f"Exported: {archive}")
+
+
+# ---- tasks CLI ----------------------------------------------------------
+
+@tasks.command("list")
+def tasks_list(status: str = typer.Option(
+                   None, "--status", "-s",
+                   help="Filter by status (CREATED/RUNNING/COMPLETED/"
+                        "FAILED/CANCELLED/...)"),
+               limit: int = typer.Option(20, "--limit", "-l",
+                                         help="Max tasks to show")):
+    """List tasks (newest first), optionally filtered by status."""
+    from nexora.core.task_engine import TaskEngine
+    rows = TaskEngine().list(status=(status or None), limit=limit)
+    if not rows:
+        typer.echo("No tasks found.")
+        return
+    for t in rows:
+        typer.echo(f"[{t.status}] {t.id} - {t.goal[:80]}")
+    if status:
+        typer.echo(f"(filtered by status={status}; total shown: "
+                   f"{len(rows)})")
+
+
+@tasks.command("detail")
+def tasks_detail(task_id: str = typer.Argument(..., help="Task ID")):
+    """Show one task: goal, status, plan steps, result and error."""
+    from nexora.core.task_engine import TaskEngine
+    te = TaskEngine()
+    t = te.get(task_id)
+    if t is None:
+        typer.secho("Task not found: " + task_id, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"ID:       {t.id}")
+    typer.echo(f"Dot:      {t.dot_id}")
+    typer.echo(f"Goal:     {t.goal}")
+    typer.echo(f"Status:   {t.status}")
+    typer.echo(f"Priority: {t.priority}")
+    typer.echo(f"Created:  {t.created_at}")
+    typer.echo(f"Updated:  {t.updated_at}")
+    plan = te.get_plan(t.id)
+    if plan:
+        typer.echo("Plan:")
+        for step in plan:
+            typer.echo("  - " + str(step))
+    else:
+        typer.echo("Plan:     (none recorded)")
+    typer.echo(f"Result:   {t.result or '(none)'}")
+    if t.error:
+        typer.secho(f"Error:    {t.error}", fg=typer.colors.RED)
+
+
+@tasks.command("cancel")
+def tasks_cancel(task_id: str = typer.Argument(..., help="Task ID")):
+    """Cancel a task (sets status to CANCELLED)."""
+    from nexora.core.task_engine import TaskEngine
+    t = TaskEngine().set_status(task_id, "CANCELLED",
+                                result="Cancelled by user")
+    if t is None:
+        typer.secho("Task not found: " + task_id, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo(f"Task cancelled: {t.id}")
 
 
 def main():
