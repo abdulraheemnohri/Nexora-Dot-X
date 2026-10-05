@@ -8,6 +8,36 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.33] - 2026-10-05
+
+### Added
+- Tasks page status filter: All / RUNNING / COMPLETED / FAILED /
+  CANCELLED links (GET /api/tasks/rows?status=...) narrow the
+  live task table without a reload.
+
+## [2.32] - 2026-10-05
+
+### Added
+- nexora tasks CLI group:
+  - nexora tasks list [--status] [--limit]
+  - nexora tasks detail <id> (goal, plan steps, result, error)
+  - nexora tasks cancel <id> (sets status to CANCELLED)
+- nexora status now also reports the total task count.
+
+## [2.31] - 2026-10-05
+
+### Added
+- Dot detail page (GET /dots/{id}): full Dot profile (mission,
+  personality, model, enabled, workspace) plus all of its tasks
+  with statuses. Every Dot card links to it.
+- Queued tasks now record their planner steps (set_plan), so the
+  task Detail view shows real plan steps.
+
+### Fixed
+- server.py used the deprecated TaskService shim with a stale
+  constructor call and swapped create(dot_id, goal) arguments.
+  Now uses TaskEngine directly with the correct
+  create(goal, dot_id=...) signature.
 ## [2.30] - 2026-10-05
 
 ### Added
