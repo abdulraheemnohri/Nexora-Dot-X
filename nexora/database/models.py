@@ -119,6 +119,8 @@ class Approval(Base):
     action = Column(Text, nullable=False)
     reason = Column(Text, default="")
     risk = Column(String, default="medium")
+    task_id = Column(String, ForeignKey("tasks.id"), nullable=True)
+    step_id = Column(String, ForeignKey("task_steps.id"), nullable=True)
     status = Column(String, default="pending")  # pending/approved/rejected/executing/executed/failed
     created_at = Column(Float, default=now)
     decided_at = Column(Float, nullable=True)
