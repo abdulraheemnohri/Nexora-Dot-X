@@ -8,6 +8,26 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.18] - 2026-10-05
+
+### Added
+- /models page live refresh: HTMX polling (every 5s)
+  via GET /api/models/rows; backend status changes
+  appear without a manual reload.
+
+## [2.17] - 2026-10-05
+
+### Added
+- Approved-skill execution support:
+  - nexora/skills/runtime.py: run_skill() imports an
+    approved skill's tools/main.py and calls run(payload)
+  - security: only active (user-approved) skills run;
+    the static safety scan is re-checked before execution
+  - Run button with input payload in the /skills UI
+  - POST /api/skills/scan and POST /api/skills/run routes
+  - Static scan column for active skills too
+  - tests/test_skill_runtime.py (5 tests)
+
 ## [2.16] - 2026-10-05
 
 ### Added
@@ -65,7 +85,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ## [2.10] - 2026-10-04
 
 ### Added
-- Always-allow grants persisted to SQLite (always_allow table):
+- Always-allow grants persisted to SQLite (always_allow tabl
+e):
   survive restarts, whitespace-normalized, revocable.
 - nexora.control.always_allow module (save/load/revoke/list)
   and grants reload at startup.
@@ -132,7 +153,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Chat page with /ws/chat streaming, settings page,
-  worker-integrated nexora start.
+  worker-integrated nexora s
+tart.
 - ChatService, device profiles, background worker.
 
 ## [2.3] - 2026-10-03
