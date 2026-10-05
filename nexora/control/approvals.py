@@ -7,6 +7,13 @@ from nexora.control.policy import PolicyEngine
 
 _policy = PolicyEngine()
 
+# restore previously granted always-allow rules from SQLite
+try:
+    from nexora.control import always_allow
+    always_allow.load_grants()
+except Exception:
+    pass  # database not initialized yet (e.g. before init_db)
+
 
 class ApprovalCenter:
 
@@ -24,11 +31,11 @@ class ApprovalCenter:
         a.status = "approved"
         repo.update_fields(a, status="approved")
         if always:
-            key = (" ".join((a.action or "").split()))
-            _policy.allowed_always.add((a.tool, key))
+            from nexora.control import always_allow
+            always_allow.save_grant(a.tool, a.action)
             from nexora.control.audit import audit
             audit("user", tool=a.tool, action=a.action, decision="ALLOW",
-                  outcome="approved as always-allow rule")
+                  outcome="approved as always-allow rule (persisted)")
         return a
 
     def reject(self, approval_id: str) -> Approval | None:

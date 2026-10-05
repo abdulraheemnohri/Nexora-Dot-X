@@ -49,6 +49,8 @@ SAFE_PATTERNS = [
 
 # Module-level always-allow store: user grants from the approval center are
 # shared across every PolicyEngine instance (System 1 is process-global).
+# Grants are persisted to SQLite by nexora.control.always_allow and reloaded
+# there when the approval center starts up.
 ALWAYS_ALLOWED: set = set()
 
 
@@ -72,7 +74,8 @@ class PolicyEngine:
 
     def evaluate(self, tool: str, action: str, *, dry_run: bool = False) -> PolicyResult:
         action = (action or "").strip()
-        # hard blocks come FIRST: no always-allow grant can ever whitelist a
+        # hard blocks come FIRST: no always-allow grant ca
+n ever whitelist a
         # dangerous command
         for rx in self._dangerous:
             if rx.search(action):

@@ -58,6 +58,14 @@ class Approval(Base):
     decided_at = Column(Float, nullable=True)
 
 
+class AlwaysAllow(Base):
+    __tablename__ = "always_allow"
+    id = Column(String, primary_key=True, default=uid)
+    tool = Column(String, nullable=False)
+    action = Column(Text, nullable=False)
+    created_at = Column(Float, default=now)
+
+
 class MemoryRecord(Base):
     __tablename__ = "memories"
     id = Column(String, primary_key=True, default=uid)
