@@ -322,3 +322,264 @@ def create_app():
             return P("No loadable models found. Drop a .litertlm/.gguf "
                      "in models/ or pull an Ollama model.")
         return Ul(raw("".join(items)))
+
+    # ---- skills ------------------------------------------------------------
+
+    @rt("/skills")
+    def skills_page():
+        pending = skills.pending()
+        active = skills.scan()
+        pend_rows = ""
+        for s in pending:
+            sc = scan_skill_files(s)
+            if sc["ok"]:
+                finding = ("clean (" + str(sc["files_scanned"])
+                           + " file(s))")
+            else:
+                finding = ("<span style='color:#e66'>"
+                           + "; ".join(sc["issues"])[:200]
+                           .replace("<", "&lt;") + "</span>")
+            pend_rows += (
+                "<tr><td>" + str(s.get("name", "?")) + "</td><td>"
+                + str(s.get("description", "")) + "</td><td>"
+                + finding + "</td><td>"
+                + '<form hx_post="/api/skills/approve" '
+                + 'hx_target="#skills-result" hx_swap="innerHTML">'
+                + '<input type="hidden" name="name" value="'
+                + str(s.get("name", "")) + '"><button>Approve</button></form>'
+                + "</td><td>"
+                + '<form hx_post="/api/skills/reject" '
+                + 'hx_target="#skills-result" hx_swap="innerHTML">'
+                + '<input type="hidden" name="name" value="'
+                + str(s.get("name", "")) + '"><button>Reject</button></form>'
+                + "</td><td>"
+                + '<form hx_post="/api/skills/scan" '
+                + 'hx_target="#skills-result" hx_swap="innerHTML">'
+                + '<input type="hidden" name="name" value="'
+                + str(s.get("name", "")) + '"><button>Scan</button></form>'
+                + "</td></tr>")
+        act_rows = "".join(
+            "<tr><td>" + str(s.get("name", "?")) + "</td><td>"
+            + str(s.get("description", ""))
+            + "</td><td>active</td><td></td></tr>"
+            for s in active)
+        return Titled("Skills", H1("Skills"),
+                      H2("Pending approval"),
+                      (Table(Thead(Th("Name"), Th("Description"),
+                                   Th("Static scan"), Th(""), Th(""),
+                                   Th("")),
+                             Tr(Td(raw(pend_rows))))
+                       if pending
+                       else P("No skills awaiting approval.")),
+                      H2("Active skills"),
+                      (Table(Thead(Th("Name"), Th("Description"),
+                                   Th("Status"), Th("")),
+                             Tr(Td(raw(act_rows))))
+                       if active else P("No active skills yet.")),
+                      P("Self-grown skills require explicit user approval - "
+                        "the AI cannot activate them (System 1). The static "
+                        "scan flags forbidden imports/calls and network use."),
+                      Div(id="skills-result"))
+
+    @rt("/api/skills/approve", methods=["POST"])
+    def skill_approve(name: str):
+        r = skills.approve(name)
+        style = "color:#4a4" if r["ok"] else "color:#e66"
+        text = ("Skill approved: " + name if r["ok"]
+                else "Error: " + r.get("error", ""))
+        return P(text, style=style)
+
+    @rt("/api/skills/reject", methods=["POST"])
+    def skill_reject(name: str):
+        r = skills.reject(name)
+        text = ("Skill rejected: " + name if r["ok"]
+                else "Error: " + r.get("error", ""))
+        return P(text, style="color:#e66")
+
+    @rt("/api/skills/scan", methods=["POST"])
+    def skill_scan(name: str):
+        s = skills.inspect(name)
+        if not s:
+            return P("Skill not found: " + name, style="color:#e66")
+        r = scan_skill_files(s)
+        if r["ok"]:
+            return P("Scan clean for " + name + " ("
+                     + str(r["files_scanned"]) + " file(s)).",
+                     style="color:#4a4")
+        items = "".join("<li>" + i.replace("<", "&lt;") + "</li>"
+                       for i in r["issues"])
+        return Div(P("Findings for " + name + ":", style="color:#e66"),
+                   Ul(raw(items)))
+
+    @rt("/dots")
+    def dots():
+        with SessionFactory() as s:
+            items = list(s.query(Dot).order_by(Dot.created_at.desc()))
+        return Titled("Dots", H1("Dots"),
+                      Form(Input(name="name", placeholder="Dot name",
+                                 required=True),
+                           Input(name="mission", placeholder="Mission"),
+                           Button("Create"), action="/api/dots",
+                           method="post"),
+                      *(Div(H3(d.name),
+                            P(d.mission or "No mission"),
+                            P("Enabled" if d.enabled else "Paused"))
+                        for d in items))
+
+    @rt("/api/dots", methods=["POST"])
+    def create_dot(name: str, mission: str = ""):
+        import uuid
+        with SessionFactory() as s:
+            d = Dot(id=uuid.uuid4().hex, name=name, mission=mission)
+            s.add(d)
+            s.commit()
+        return RedirectResponse("/dots", status_code=303)
+
+    @rt("/tasks")
+    def task_page():
+        return Titled("Tasks", H1("Tasks"),
+                      Form(Input(name="dot_id", placeholder="Dot ID",
+                                 required=True),
+                           Input(name="goal", placeholder="Goal",
+                                 required=True),
+                           Button("Queue task"), action="/api/tasks",
+                           method="post"),
+                      *(Div(H3(t.goal),
+                            P(f"{t.status} · {t.id}"))
+                        for t in tasks.list()))
+
+    @rt("/api/tasks", methods=["POST"])
+    async def create_task(dot_id: str, goal: str):
+        await runtime_submit(dot_id, goal)
+        return RedirectResponse("/tasks", status_code=303)
+
+    async def runtime_submit(dot_id, goal):
+        task = tasks.create(dot_id, goal)
+        plan = planner.plan(goal)
+        if not plan:
+            tasks.set_status(task.id, "FAILED",
+                            "Planner returned no steps")
+            return task
+        tasks.set_status(task.id, "PLANNING")
+        tasks.set_status(task.id, "RUNNING")
+        tasks.set_status(task.id, "COMPLETED",
+                         "Plan created; awaiting configured "
+                         "model/tool execution.")
+        return task
+
+    # ---- approvals ---------------------------------------------------------
+
+    def _pending_cards():
+        cards = []
+        for a in approvals.pending():
+            rows = ("<div style='border:1px solid #ccc;"
+                    "padding:10px;margin:8px 0'>")
+            rows += ("<h3>" + str(a.tool) + " · " + str(a.action)
+                     + "</h3>")
+            rows += "<p>" + str(a.reason or "") + "</p>"
+            rows += ("<form action='/api/approvals/" + str(a.id)
+                     + "/approve' method='post' "
+                     "style='display:inline'>")
+            rows += "<button>Approve once</button></form> "
+            rows += ("<form action='/api/approvals/" + str(a.id)
+                     + "/always' method='post' "
+                     "style='display:inline'>")
+            rows += "<button>Always allow this</button></form> "
+            rows += ("<form action='/api/approvals/" + str(a.id)
+                     + "/reject' method='post' "
+                     "style='display:inline'>")
+            rows += "<button>Reject</button></form></div>"
+            cards.append(rows)
+        return cards
+
+    def _grants_table():
+        grants = grants_store.list_grants()
+        if not grants:
+            return P("No always-allow rules granted yet.")
+        rows = ""
+        for tool, action in grants:
+            rows += ("<tr><td>" + tool + "</td><td>"
+                     + action.replace("<", "&lt;") + "</td><td>"
+                     + '<form hx_post="/api/grants/revoke" '
+                       'hx_target="#grants-result" '
+                       'hx_swap="innerHTML">'
+                     + '<input type="hidden" name="tool" value="' + tool
+                     + '"><input type="hidden" name="action" value="'
+                     + action.replace('"', "&quot;") + '">'
+                     + "<button>Revoke</button></form></td></tr>")
+        return Div(
+            Table(Thead(Th("Tool"), Th("Action"), Th("")),
+                  Tr(Td(raw(rows)))),
+            P(Small("Revoking takes effect immediately and is "
+                    "audited.")))
+
+    @rt("/approvals")
+    def approval_page():
+        cards = _pending_cards()
+        return Titled("Approvals", H1("Approval Center"),
+                      H2("Pending"),
+                      Div(raw("".join(cards)))
+                      if cards else P("No pending approvals."),
+                      H2("Always-allow rules (persisted)"),
+                      Div(_grants_table(), id="grants-result"))
+
+    @rt("/api/approvals/{approval_id}/approve", methods=["POST"])
+    def approve(approval_id: str):
+        approvals.decide(approval_id, True)
+        return RedirectResponse("/approvals", status_code=303)
+
+    @rt("/api/approvals/{approval_id}/always", methods=["POST"])
+    def always_allow(approval_id: str):
+        approvals.decide(approval_id, True, always=True)
+        return RedirectResponse("/approvals", status_code=303)
+
+    @rt("/api/approvals/{approval_id}/reject", methods=["POST"])
+    def reject(approval_id: str):
+        approvals.decide(approval_id, False)
+        return RedirectResponse("/approvals", status_code=303)
+
+    @rt("/api/grants/revoke", methods=["POST"])
+    def revoke_grant(tool: str, action: str):
+        from nexora.control.audit import audit
+        ok = grants_store.revoke_grant(tool, action)
+        audit("user", tool=tool, action=action, decision="REVOKE",
+              outcome="always-allow rule revoked" if ok
+              else "always-allow rule not found")
+        if not ok:
+            return P("Rule not found: " + tool + " · "
+                     + action.replace("<", "&lt;"),
+                     style="color:#e66")
+        return P("Revoked: " + tool + " · "
+                 + action.replace("<", "&lt;") + ". "
+                 "Future requests will ask again.",
+                 style="color:#4a4")
+
+    @rt("/settings")
+    def settings_page():
+        active = get_profile().name
+        rows = "".join(
+            "<tr><td><b>" + name + "</b>"
+            + (" (active)" if name == active else "") + "</td>"
+            + "<td>" + str(p.max_workers) + "</td><td>"
+            + str(p.poll_seconds) + "s</td>"
+            + "<td>" + ("yes" if p.allow_browser else "no") + "</td>"
+            + "<td>" + str(p.context) + "</td></tr>"
+            for name, p in PROFILES.items())
+        return Titled("Settings", H1("Settings"),
+                      H2("Device Profile"),
+                      Table(Thead(Th("Profile"), Th("Max workers"),
+                                  Th("Poll"), Th("Browser"),
+                                  Th("Context")),
+                            Tr(Td(raw(rows)))),
+                      P("Set with NEXORA_PROFILE env var or: "
+                        "nexora start --profile <name>"),
+                      H2("System"),
+                      P("Local-only: " + str(settings.local_only)),
+                      P("Auth enabled: " + str(settings.auth_enabled)),
+                      P("Host: " + str(settings.host) + ":"
+                        + str(settings.port)),
+                      Form(Button("Logout"), action="/auth/logout",
+                           method="post"))
+
+    app = AuthMiddleware(app)
+    return app
