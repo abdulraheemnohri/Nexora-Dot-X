@@ -13,7 +13,7 @@ def test_unknown_actions_require_approval():
     assert result.decision is Decision.ASK
 
 
-def test_approval_claim_is_single_use():
+def test_approval_claim_is_single_use(monkeypatch):
     from nexora.core import executor as executor_module
 
     class FakeApproval:
@@ -22,28 +22,22 @@ def test_approval_claim_is_single_use():
         action = "do-it"
         status = "approved"
 
-    class FakeRepo:
-        def __init__(self):
-            self.claims = 0
+    calls = {"claim": 0}
 
-        def get_by_id(self, model, approval_id):
-            return FakeApproval()
+    monkeypatch.setattr(
+        executor_module.repo, "get_by_id",
+        lambda model, approval_id: FakeApproval(),
+    )
 
-        def claim_approval(self, model, approval_id):
-            self.claims += 1
-            if self.claims == 1:
-                return FakeApproval()
-            return None
+    def claim(approval_id):
+        calls["claim"] += 1
+        return FakeApproval() if calls["claim"] == 1 else None
 
-    class FakeTools:
-        def run(self, tool, action):
-            return {"ok": True, "output": "done"}
+    runner = executor_module.Executor(
+        type("FakeTools", (), {"run": lambda self, tool, action: {"ok": True, "output": "done"}})()
+    )
+    monkeypatch.setattr(runner.approvals, "claim", claim)
+    monkeypatch.setattr(runner.approvals, "mark_executed", lambda approval_id: FakeApproval())
 
-    original_repo = executor_module.repo
-    executor_module.repo = FakeRepo()
-    try:
-        runner = executor_module.Executor(FakeTools())
-        assert runner.resume("approval-1").ok
-        assert not runner.resume("approval-1").ok
-    finally:
-        executor_module.repo = original_repo
+    assert runner.resume("approval-1").ok
+    assert not runner.resume("approval-1").ok
