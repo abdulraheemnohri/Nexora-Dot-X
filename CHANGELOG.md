@@ -8,6 +8,29 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.39] - 2026-10-05
+
+### Added
+- nexora skills validate <zip> [--url]: dry-run check of a skill
+  archive - unpacks to a temp dir only (nothing is imported),
+  validates skill.json, lists files and runs the full static
+  safety scan. Import and validate now share one unpack helper.
+
+## [2.38] - 2026-10-05
+
+### Added
+- Tasks live table pagination: 20 tasks per page with page
+  links (GET /api/tasks/rows?page=N), working together with the
+  status filter. Page links are HTMX - no reload needed.
+
+## [2.37] - 2026-10-05
+
+### Added
+- nexora dots CLI group:
+  - nexora dots list [--enabled]
+  - nexora dots create <name> [--mission]
+  - nexora dots detail <id> (profile + recent tasks)
+  - nexora dots toggle <id> (enable/pause)
 ## [2.36] - 2026-10-05
 
 ### Added
@@ -62,6 +85,7 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Dots enable/pause toggle: POST /api/dots/toggle flips the
+
   enabled flag and redirects to /dots. Every Dot card now shows
   its status and a Pause/Resume button (paused Dots are excluded
   from chat and new work).
@@ -117,7 +141,8 @@ g). Imported skills still require
   GET /api/status: version, profile, local-only/auth flags,
   host:port, ready backend, per-backend model list, pending
   approvals, always-allow grants and skill counts.
-  (Gracefully falls back if runtime details are unavailable.)
+  (Gracefully falls back if runtime details
+ are unavailable.)
 
 ### Changed
 - Version bumped 0.1.0 -> 0.2.0 (pyproject.toml and
@@ -186,7 +211,8 @@ s.
   - Discover button listing loadabl
 e models
     (Ollama pulled models, models/gguf/*.gguf, LiteRT scan)
-  - ModelService load/unload/discover with event-bus publishes
+  - ModelService load
+/unload/discover with event-bus publishes
   - API routes /api/models/load, /api/models/unload,
     /api/models/discover
 - Tests for ModelService (fake router, no runtimes needed).
@@ -255,7 +281,8 @@ rve OpenAI-compatible server
  ensure_default_model
   (SyntaxError from a split string literal).
 
-## [2.6] - 2026-10-04
+## [2.6] - 2026-1
+0-04
 
 ### Added
 - Approvals "always allow" grants shared process-wide
