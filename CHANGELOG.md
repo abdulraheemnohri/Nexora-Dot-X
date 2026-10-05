@@ -8,6 +8,19 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [0.2.0] - 2026-10-05
+
+### Added
+- nexora status CLI is now richer and aligned with
+  GET /api/status: version, profile, local-only/auth flags,
+  host:port, ready backend, per-backend model list, pending
+  approvals, always-allow grants and skill counts.
+  (Gracefully falls back if runtime details are unavailable.)
+
+### Changed
+- Version bumped 0.1.0 -> 0.2.0 (pyproject.toml and
+  nexora.__version__), so /api/status and the CLI report 0.2.0.
+
 ## [2.18] - 2026-10-05
 
 ### Added
@@ -64,7 +77,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Model management actions in the /models UI:
   - per-backend Load (model name/path) and Unload buttons
-  - Discover button listing loadable models
+  - Discover button listing loadabl
+e models
     (Ollama pulled models, models/gguf/*.gguf, LiteRT scan)
   - ModelService load/unload/discover with event-bus publishes
   - API routes /api/models/load, /api/models/unload,
@@ -127,7 +141,8 @@ e):
 - docs/LITERT.md.
 
 ### Fixed
-- Broken f-string in ensure_default_model
+- Broken f-string in
+ ensure_default_model
   (SyntaxError from a split string literal).
 
 ## [2.6] - 2026-10-04
