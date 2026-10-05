@@ -919,6 +919,7 @@ def create_app():
                              "Planner returned no steps")
             return task
         tasks.set_plan(task.id, plan)
+        tasks.initialize_steps(task.id, plan)
         tasks.set_status(task.id, "PLANNING")
         tasks.set_status(task.id, "RUNNING")
         tasks.set_status(task.id, "COMPLETED",
