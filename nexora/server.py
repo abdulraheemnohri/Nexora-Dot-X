@@ -11,6 +11,7 @@ from nexora.core.memory_service import MemoryService
 from nexora.core.model_service import ModelService
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
+from nexora.control import always_allow as grants_store
 from nexora.security.auth import AuthManager
 from nexora.security.middleware import COOKIE, AuthMiddleware
 from nexora.skills.manager import SkillManager
@@ -18,7 +19,8 @@ from nexora.skills.manager import SkillManager
 CHAT_JS = r"""const log = document.getElementById('chat-log');
 let dotId = '';
 const sel = document.getElementById('chat-dot');
-if (sel) { dotId = sel.value; sel.onchange = function() { dotId = sel.value; connect(); }; }
+if (sel) { dotId = sel.value;
+  sel.onchange = function() { dotId = sel.value; connect(); }; }
 let ws = null;
 function addMsg(who, text) {
   const p = document.createElement('p');
@@ -30,12 +32,19 @@ function addMsg(who, text) {
 function connect() {
   if (ws) { ws.onclose = null; ws.close(); }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(proto + '://' + location.host + '/ws/chat?dot_id=' + encodeURIComponent(dotId));
+  const u = proto + '://' + location.host + '/ws/chat?dot_id='
+      + encodeURIComponent(dotId);
+  ws = new WebSocket(u);
   ws.onmessage = function(ev) {
     const m = JSON.parse(ev.data);
-    if (m.kind === 'chat.chunk') { log.lastChild.appendChild(document.createTextNode(m.payload.text)); log.scrollTop = log.scrollHeight; }
-    else if (m.kind === 'chat.start') { addMsg('Dot', ''); }
-    else if (m.kind === 'chat.error') { addMsg('Error', m.payload.error); }
+    if (m.kind === 'chat.chunk') {
+      log.lastChild.appendChild(
+          document.createTextNode(m.payload.text));
+      log.scrollTop = log.scrollHeight;
+    } else if (m.kind === 'chat.start') { addMsg('Dot', ''); }
+    else if (m.kind === 'chat.error') {
+      addMsg('Error', m.payload.error);
+    }
   };
   ws.onclose = function() { ws = null; };
 }
@@ -45,8 +54,12 @@ document.getElementById('chat-form').onsubmit = function(ev) {
   const text = input.value.trim();
   if (!text) return;
   addMsg('You', text);
-  if (!ws) { connect(); setTimeout(function() { if (ws && ws.readyState === 1) ws.send(text); }, 300); }
-  else { ws.send(text); }
+  if (!ws) {
+    connect();
+    setTimeout(function() {
+      if (ws && ws.readyState === 1) ws.send(text);
+    }, 300);
+  } else { ws.send(text); }
   input.value = '';
 };
 if (window.WebSocket) connect();"""
@@ -69,12 +82,16 @@ def create_app():
         return Titled("Nexora Dot X",
                       H1("Nexora Dot X"),
                       P("Local-first autonomous AI control center"),
-                      Div(A("Dots", href="/dots"), " · ", A("Chat", href="/chat"),
-                          " · ", A("Memory", href="/memory"), " · ", A("Models", href="/models"),
-                          " · ", A("Skills", href="/skills"),
-                          " · ", A("Tasks", href="/tasks"), " · ", A("Approvals", href="/approvals"),
-                          " · ", A("Settings", href="/settings")),
-                      P("Local-only: " + str(settings.local_only) + " · Profile: " + get_profile().name
+                      Div(A("Dots", href="/dots"), " · ",
+                          A("Chat", href="/chat"), " · ",
+                          A("Memory", href="/memory"), " · ",
+                          A("Models", href="/models"), " · ",
+                          A("Skills", href="/skills"), " · ",
+                          A("Tasks", href="/tasks"), " · ",
+                          A("Approvals", href="/approvals"), " · ",
+                          A("Settings", href="/settings")),
+                      P("Local-only: " + str(settings.local_only)
+                        + " · Profile: " + get_profile().name
                         + " · Model: " + (ready or "none ready")))
 
     @rt("/api/status")
@@ -86,8 +103,10 @@ def create_app():
     @rt("/login")
     def login_page():
         return Titled("Login", H1("Nexora Login"),
-                      Form(Input(name="password", type="password", placeholder="Password", required=True),
-                           Button("Login"), action="/auth/login", method="post"),
+                      Form(Input(name="password", type="password",
+                                 placeholder="Password", required=True),
+                           Button("Login"), action="/auth/login",
+                           method="post"),
                       P("Auth is enabled (NEXORA_AUTH_ENABLED=true)."))
 
     @rt("/auth/login", methods=["POST"])
@@ -108,12 +127,18 @@ def create_app():
     @rt("/chat")
     def chat_page():
         with SessionFactory() as s:
-            items = list(s.query(Dot).filter_by(enabled=True).order_by(Dot.created_at.desc()))
-        options = [Option(d.name, value=d.id) for d in items] or [Option("No enabled Dots", value="")]
+            items = list(s.query(Dot).filter_by(enabled=True)
+                         .order_by(Dot.created_at.desc()))
+        options = [Option(d.name, value=d.id) for d in items]
+        if not options:
+            options = [Option("No enabled Dots", value="")]
         return Titled("Chat", H1("Chat"),
                       Div(H4("Dot: "), Select(*options, id="chat-dot")),
-                      Div(id="chat-log", style="border:1px solid #ccc;height:300px;overflow-y:auto;padding:8px"),
-                      Form(Input(name="message", placeholder="Message", required=True, id="chat-input"),
+                      Div(id="chat-log",
+                          style="border:1px solid #ccc;height:300px;"
+                                "overflow-y:auto;padding:8px"),
+                      Form(Input(name="message", placeholder="Message",
+                                 required=True, id="chat-input"),
                            Button("Send"), id="chat-form"),
                       Script(CHAT_JS))
 
@@ -138,17 +163,22 @@ def create_app():
     @rt("/memory")
     def memory_page():
         return Titled("Memory", H1("Memory (federated)"),
-                      Form(Input(name="query", placeholder="Search memory...", id="mem-q", autofocus=True),
+                      Form(Input(name="query", placeholder="Search memory...",
+                                 id="mem-q", autofocus=True),
                            Button("Search"), hx_post="/api/memory/search",
                            hx_target="#mem-results", hx_swap="innerHTML"),
                       Details(Open(False), Summary("Remember something new"),
-                              Form(Input(name="content", placeholder="Content", required=True),
+                              Form(Input(name="content", placeholder="Content",
+                                         required=True),
                                    Select(Option("semantic", value="semantic"),
                                           Option("user", value="user"),
                                           Option("project", value="project"),
-                                          Option("episodic", value="episodic"), name="kind"),
-                                   Button("Save"), hx_post="/api/memory/remember",
-                                   hx_target="#mem-results", hx_swap="innerHTML")),
+                                          Option("episodic", value="episodic"),
+                                          name="kind"),
+                                   Button("Save"),
+                                   hx_post="/api/memory/remember",
+                                   hx_target="#mem-results",
+                                   hx_swap="innerHTML")),
                       Div(id="mem-results"))
 
     @rt("/api/memory/search", methods=["POST"])
@@ -162,42 +192,54 @@ def create_app():
             kind = h.get("kind")
             if kind:
                 color = {"user": "#06c", "semantic": "#4a4",
-                        "project": "#a60", "episodic": "#555"}.get(kind, "#999")
-                badge = " <small style='color:" + color + "'>[" + str(kind) + "]</small>"
+                         "project": "#a60", "episodic": "#555"}.get(kind,
+                                                                    "#999")
+                badge = (" <small style='color:" + color + "'>["
+                         + str(kind) + "]</small>")
             conf = h.get("confidence")
             if conf is not None:
-                badge += " <small style='color:#999'>conf " + str(conf) + "</small>"
-            items.append("<li>" + str(h.get("content", "")).replace("<", "&lt;") + badge + "</li>")
+                badge += (" <small style='color:#999'>conf "
+                          + str(conf) + "</small>")
+            content = str(h.get("content", "")).replace("<", "&lt;")
+            items.append("<li>" + content + badge + "</li>")
         return Ul(raw("".join(items)))
 
     @rt("/api/memory/remember", methods=["POST"])
     def memory_remember(content: str, kind: str = "semantic"):
         ok = memory.remember(content, kind=kind)
+        style = "color:#4a4" if ok else "color:#e66"
         return P("Saved." if ok else "Empty content not saved.",
-                 style="color:#4a4" if ok else "color:#e66")
+                 style=style)
 
     @rt("/models")
     def models_page():
         rows = "".join(
-            "<tr><td>" + m["backend"] + "</td><td>" + m["status"] + "</td>"
-            + "<td>" + str(m["model"]) + "</td><td>" + str(m["detail"]) + "</td></tr>"
+            "<tr><td>" + m["backend"] + "</td><td>" + m["status"] \
+            + "</td><td>" + str(m["model"]) + "</td><td>" \
+            + str(m["detail"]) + "</td></tr>"
             for m in models.status())
         ready = models.ready_backend()
         return Titled("Models", H1("Model Management"),
                       P("Active backend: " + (ready or "none ready")),
-                      Table(Thead(Th("Backend"), Th("Status"), Th("Model"), Th("Detail")),
+                      Table(Thead(Th("Backend"), Th("Status"),
+                                  Th("Model"), Th("Detail")),
                             Tr(Td(raw(rows)))),
-                      Button("Scan LiteRT models", hx_post="/api/models/scan",
-                             hx_target="#scan-result", hx_swap="innerHTML"),
+                      Button("Scan LiteRT models",
+                             hx_post="/api/models/scan",
+                             hx_target="#scan-result",
+                             hx_swap="innerHTML"),
                       Div(id="scan-result"),
-                      P("No model ready? Install one: nexora litert scan / models/gguf / ollama pull"))
+                      P("No model ready? Install one: "
+                        "nexora litert scan / models/gguf / ollama pull"))
 
     @rt("/api/models/scan", methods=["POST"])
     def models_scan():
         found = models.scan_litert()
-        return P("Scan complete: " + str(found) + " LiteRT model(s) found.")
+        return P("Scan complete: " + str(found)
+                 + " LiteRT model(s) found.")
 
     # ---- skills ------------------------------------------------------------
+
     @rt("/skills")
     def skills_page():
         pending = skills.pending()
@@ -205,50 +247,66 @@ def create_app():
         pend_rows = "".join(
             "<tr><td>" + s.get("name", "?") + "</td><td>"
             + str(s.get("description", "")) + "</td>"
-            + '<td><form hx_post="/api/skills/approve" hx_target="#skills-result" '
-            + 'hx_swap="innerHTML"><input type="hidden" name="name" value="'
+            + '<td><form hx_post="/api/skills/approve" '
+            + 'hx_target="#skills-result" hx_swap="innerHTML">'
+            + '<input type="hidden" name="name" value="'
             + s.get("name", "") + '"><button>Approve</button></form></td>'
-            + '<td><form hx_post="/api/skills/reject" hx_target="#skills-result" '
-            + 'hx_swap="innerHTML"><input type="hidden" name="name" value="'
-            + s.get("name", "") + '"><button>Reject</button></form></td></tr>'
+            + '<td><form hx_post="/api/skills/reject" '
+            + 'hx_target="#skills-result" hx_swap="innerHTML">'
+            + '<input type="hidden" name="name" value="'
+            + s.get("name", "") + '"><button>Reject</button></form>'
+            + "</td></tr>"
             for s in pending)
         act_rows = "".join(
             "<tr><td>" + s.get("name", "?") + "</td><td>"
-            + str(s.get("description", "")) + "</td><td>active</td><td></td></tr>"
+            + str(s.get("description", ""))
+            + "</td><td>active</td><td></td></tr>"
             for s in active)
         return Titled("Skills", H1("Skills"),
                       H2("Pending approval"),
-                      (Table(Thead(Th("Name"), Th("Description"), Th(""), Th("")),
-                             Tr(Td(raw(pend_rows)))) if pending else P("No skills awaiting approval.")),
+                      (Table(Thead(Th("Name"), Th("Description"),
+                                   Th(""), Th("")),
+                             Tr(Td(raw(pend_rows))))
+                       if pending
+                       else P("No skills awaiting approval.")),
                       H2("Active skills"),
-                      (Table(Thead(Th("Name"), Th("Description"), Th("Status"), Th("")),
-                             Tr(Td(raw(act_rows)))) if active else P("No active skills yet.")),
-                      P("Self-grown skills require explicit user approval - the AI "
-                        "cannot activate them (System 1)."),
+                      (Table(Thead(Th("Name"), Th("Description"),
+                                   Th("Status"), Th("")),
+                             Tr(Td(raw(act_rows))))
+                       if active else P("No active skills yet.")),
+                      P("Self-grown skills require explicit user approval - "
+                        "the AI cannot activate them (System 1)."),
                       Div(id="skills-result"))
 
     @rt("/api/skills/approve", methods=["POST"])
     def skill_approve(name: str):
         r = skills.approve(name)
-        return P("Skill approved: " + name if r["ok"] else "Error: " + r.get("error", ""),
-                 style="color:#4a4" if r["ok"] else "color:#e66")
+        style = "color:#4a4" if r["ok"] else "color:#e66"
+        text = ("Skill approved: " + name if r["ok"]
+                else "Error: " + r.get("error", ""))
+        return P(text, style=style)
 
     @rt("/api/skills/reject", methods=["POST"])
     def skill_reject(name: str):
         r = skills.reject(name)
-        return P("Skill rejected: " + name if r["ok"] else "Error: " + r.get("error", ""),
-                 style="color:#e66" if r["ok"] else "color:#e66")
+        text = ("Skill rejected: " + name if r["ok"]
+                else "Error: " + r.get("error", ""))
+        return P(text, style="color:#e66")
 
     @rt("/dots")
     def dots():
         with SessionFactory() as s:
             items = list(s.query(Dot).order_by(Dot.created_at.desc()))
         return Titled("Dots", H1("Dots"),
-                      Form(Input(name="name", placeholder="Dot name", required=True),
+                      Form(Input(name="name", placeholder="Dot name",
+                                 required=True),
                            Input(name="mission", placeholder="Mission"),
-                           Button("Create"), action="/api/dots", method="post"),
-                      *(Div(H3(d.name), P(d.mission or "No mission"),
-                            P("Enabled" if d.enabled else "Paused")) for d in items))
+                           Button("Create"), action="/api/dots",
+                           method="post"),
+                      *(Div(H3(d.name),
+                            P(d.mission or "No mission"),
+                            P("Enabled" if d.enabled else "Paused"))
+                        for d in items))
 
     @rt("/api/dots", methods=["POST"])
     def create_dot(name: str, mission: str = ""):
@@ -262,10 +320,15 @@ def create_app():
     @rt("/tasks")
     def task_page():
         return Titled("Tasks", H1("Tasks"),
-                      Form(Input(name="dot_id", placeholder="Dot ID", required=True),
-                           Input(name="goal", placeholder="Goal", required=True),
-                           Button("Queue task"), action="/api/tasks", method="post"),
-                      *(Div(H3(t.goal), P(f"{t.status} · {t.id}")) for t in tasks.list()))
+                      Form(Input(name="dot_id", placeholder="Dot ID",
+                                 required=True),
+                           Input(name="goal", placeholder="Goal",
+                                 required=True),
+                           Button("Queue task"), action="/api/tasks",
+                           method="post"),
+                      *(Div(H3(t.goal),
+                            P(f"{t.status} · {t.id}"))
+                        for t in tasks.list()))
 
     @rt("/api/tasks", methods=["POST"])
     async def create_task(dot_id: str, goal: str):
@@ -276,33 +339,71 @@ def create_app():
         task = tasks.create(dot_id, goal)
         plan = planner.plan(goal)
         if not plan:
-            tasks.set_status(task.id, "FAILED", "Planner returned no steps")
+            tasks.set_status(task.id, "FAILED",
+                            "Planner returned no steps")
             return task
         tasks.set_status(task.id, "PLANNING")
         tasks.set_status(task.id, "RUNNING")
         tasks.set_status(task.id, "COMPLETED",
-                         "Plan created; awaiting configured model/tool execution.")
+                         "Plan created; awaiting configured "
+                         "model/tool execution.")
         return task
+
+    # ---- approvals ---------------------------------------------------------
+
+    def _pending_cards():
+        cards = []
+        for a in approvals.pending():
+            rows = ("<div style='border:1px solid #ccc;"
+                    "padding:10px;margin:8px 0'>")
+            rows += ("<h3>" + str(a.tool) + " · " + str(a.action)
+                     + "</h3>")
+            rows += "<p>" + str(a.reason or "") + "</p>"
+            rows += ("<form action='/api/approvals/" + str(a.id)
+                    + "/approve' method='post' "
+                      "style='display:inline'>")
+            rows += "<button>Approve once</button></form> "
+            rows += ("<form action='/api/approvals/" + str(a.id)
+                    + "/always' method='post' "
+                      "style='display:inline'>")
+            rows += "<button>Always allow this</button></form> "
+            rows += ("<form action='/api/approvals/" + str(a.id)
+                    + "/reject' method='post' "
+                      "style='display:inline'>")
+            rows += "<button>Reject</button></form></div>"
+            cards.append(rows)
+        return cards
+
+    def _grants_table():
+        grants = grants_store.list_grants()
+        if not grants:
+            return P("No always-allow rules granted yet.")
+        rows = ""
+        for tool, action in grants:
+            rows += ("<tr><td>" + tool + "</td><td>"
+                     + action.replace("<", "&lt;") + "</td><td>"
+                     + '<form hx_post="/api/grants/revoke" '
+                       'hx_target="#grants-result" '
+                       'hx_swap="innerHTML">'
+                     + '<input type="hidden" name="tool" value="' + tool
+                     + '"><input type="hidden" name="action" value="'
+                     + action.replace('"', "&quot;") + '">'
+                     + "<button>Revoke</button></form></td></tr>")
+        return Div(
+            Table(Thead(Th("Tool"), Th("Action"), Th("")),
+                  Tr(Td(raw(rows)))),
+            P(Small("Revoking takes effect immediately and is "
+                    "audited.")))
 
     @rt("/approvals")
     def approval_page():
-        cards = []
-        for a in approvals.pending():
-            rows = "<div style='border:1px solid #ccc;padding:10px;margin:8px 0'>"
-            rows += "<h3>" + str(a.tool) + " · " + str(a.action) + "</h3>"
-            rows += "<p>" + str(a.reason or "") + "</p>"
-            rows += "<form action='/api/approvals/" + str(a.id) + "/approve' method='post' style='display:inline'>"
-            rows += "<button>Approve once</button></form> "
-            rows += "<form action='/api/approvals/" + str(a.id) + "/always' method='post' style='display:inline'>"
-            rows += "<button>Always allow this</button></form> "
-            rows += "<form action='/api/approvals/" + str(a.id) + "/reject' method='post' style='display:inline'>"
-            rows += "<button>Reject</button></form></div>"
-            cards.append(rows)
-        if not cards:
-            return Titled("Approvals", H1("Approval Center"), P("No pending approvals."))
+        cards = _pending_cards()
         return Titled("Approvals", H1("Approval Center"),
-                      P("Approve once, always allow (policy rule), or reject:"),
-                      Div(raw("".join(cards))))
+                      H2("Pending"),
+                      Div(raw("".join(cards)))
+                      if cards else P("No pending approvals."),
+                      H2("Always-allow rules (persisted)"),
+                      Div(_grants_table(), id="grants-result"))
 
     @rt("/api/approvals/{approval_id}/approve", methods=["POST"])
     def approve(approval_id: str):
@@ -319,25 +420,48 @@ def create_app():
         approvals.decide(approval_id, False)
         return RedirectResponse("/approvals", status_code=303)
 
+    @rt("/api/grants/revoke", methods=["POST"])
+    def revoke_grant(tool: str, action: str):
+        from nexora.control.audit import audit
+        ok = grants_store.revoke_grant(tool, action)
+        audit("user", tool=tool, action=action, decision="REVOKE",
+              outcome="always-allow rule revoked" if ok
+              else "always-allow rule not found")
+        if not ok:
+            return P("Rule not found: " + tool + " · "
+                     + action.replace("<", "&lt;"),
+                     style="color:#e66")
+        return P("Revoked: " + tool + " · "
+                 + action.replace("<", "&lt;") + ". "
+                 "Future requests will ask again.",
+                 style="color:#4a4")
+
     @rt("/settings")
     def settings_page():
         active = get_profile().name
         rows = "".join(
-            "<tr><td><b>" + name + "</b>" + (" (active)" if name == active else "") + "</td>"
-            + "<td>" + str(p.max_workers) + "</td><td>" + str(p.poll_seconds) + "s</td>"
+            "<tr><td><b>" + name + "</b>"
+            + (" (active)" if name == active else "") + "</td>"
+            + "<td>" + str(p.max_workers) + "</td><td>"
+            + str(p.poll_seconds) + "s</td>"
             + "<td>" + ("yes" if p.allow_browser else "no") + "</td>"
             + "<td>" + str(p.context) + "</td></tr>"
             for name, p in PROFILES.items())
         return Titled("Settings", H1("Settings"),
                       H2("Device Profile"),
-                      Table(Thead(Th("Profile"), Th("Max workers"), Th("Poll"),
-                                  Th("Browser"), Th("Context")), Tr(Td(raw(rows)))),
-                      P("Set with NEXORA_PROFILE env var or: nexora start --profile <name>"),
+                      Table(Thead(Th("Profile"), Th("Max workers"),
+                                  Th("Poll"), Th("Browser"),
+                                  Th("Context")),
+                            Tr(Td(raw(rows)))),
+                      P("Set with NEXORA_PROFILE env var or: "
+                        "nexora start --profile <name>"),
                       H2("System"),
                       P("Local-only: " + str(settings.local_only)),
                       P("Auth enabled: " + str(settings.auth_enabled)),
-                      P("Host: " + str(settings.host) + ":" + str(settings.port)),
-                      Form(Button("Logout"), action="/auth/logout", method="post"))
+                      P("Host: " + str(settings.host) + ":"
+                        + str(settings.port)),
+                      Form(Button("Logout"), action="/auth/logout",
+                           method="post"))
 
     app = AuthMiddleware(app)
     return app
