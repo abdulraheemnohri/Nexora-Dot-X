@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from nexora.tools.registry import ToolRegistry, ToolSpec
+from nexora.mcp.runtime import MCPStdioClient, MCPProcessConfig
 
 @dataclass
 class MCPServer:
@@ -50,3 +51,23 @@ class MCPGateway:
 
     def schemas(self): return self.registry.schemas()
     def servers_list(self): return list(self.servers.values())
+
+    async def connect_stdio(self, server_id: str, config: MCPProcessConfig):
+        server = self.servers[server_id]
+        client = MCPStdioClient(config)
+        await client.start()
+        tools = await client.list_tools()
+        self.discover(server_id, tools)
+        self.handlers.update({f"mcp.{server_id}.{t['name']}": (lambda args, c=client, n=t['name']: __import__('asyncio').run(c.call_tool(n, args))) for t in tools if t.get('name')})
+        for tool_id, handler in list(self.handlers.items()):
+            if tool_id.startswith(f"mcp.{server_id}."):
+                self.bind_handler(tool_id, handler)
+        server.metadata['transport'] = 'stdio'
+        server.metadata['client'] = client
+        return tools
+
+    async def disconnect(self, server_id: str):
+        server = self.servers[server_id]
+        client = server.metadata.pop('client', None)
+        if client:
+            await client.close()
