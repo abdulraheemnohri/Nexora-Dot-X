@@ -8,6 +8,15 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.42] - 2026-10-05
+
+### Added
+- Skills page: "Import a skill (.zip)" upload form
+  (POST /api/skills/upload, multipart). The archive is
+  unpacked safely (path-traversal guarded), statically
+  scanned, and only queued for approval - never
+  auto-activated (System 1).
+
 ## [2.41] - 2026-10-05
 
 ### Added

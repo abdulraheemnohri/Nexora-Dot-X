@@ -2,6 +2,7 @@ from time import time
 
 from fasthtml.common import *
 from starlette.websockets import WebSocket, WebSocketDisconnect
+from starlette.datastructures import UploadFile
 
 from nexora import __version__
 from nexora.config import settings
@@ -467,6 +468,15 @@ def create_app():
                 + str(s.get("name", "")) + '"><button>Detail</button></form>'
                 + "</td></tr>")
         return Titled("Skills", H1("Skills"),
+                      Details(Open(False),
+                              Summary("Import a skill (.zip)"),
+                              Form(Input(type="file", name="file",
+                                         required=True, accept=".zip"),
+                                   Button("Upload"),
+                                   hx_post="/api/skills/upload",
+                                   hx_encoding="multipart/form-data",
+                                   hx_target="#skills-result",
+                                   hx_swap="innerHTML")),
                       H2("Pending approval"),
                       (Table(Thead(Th("Name"), Th("Description"),
                                    Th("Static scan"), Th(""), Th(""),
@@ -485,6 +495,56 @@ def create_app():
                         "approved skills can be run; the static scan is "
                         "re-checked before every execution."),
                       Div(id="skills-result"))
+
+    @rt("/api/skills/upload", methods=["POST"])
+    async def skills_upload(file: UploadFile):
+        """Import a skill .zip: safe unpack, static scan, then
+        queue it for approval (never auto-activated)."""
+        import shutil
+        import tempfile
+        import zipfile
+        from pathlib import Path
+
+        if (file is None or not file.filename
+                or not file.filename.endswith(".zip")):
+            return P("Please choose a .zip archive.",
+                     style="color:#e66")
+        tmp = Path(tempfile.mkdtemp(prefix="nexora-skill-"))
+        try:
+            zip_path = tmp / "upload.zip"
+            zip_path.write_bytes(await file.read())
+            try:
+                with zipfile.ZipFile(zip_path) as zf:
+                    bad = [n for n in zf.namelist()
+                           if n.startswith(("/", "\\")) or ".." in n]
+                    if bad:
+                        return P("Unsafe path in archive: "
+                                 + bad[0], style="color:#e66")
+                    zf.extractall(tmp / "unpacked")
+            except zipfile.BadZipFile:
+                return P("Not a valid .zip archive.",
+                         style="color:#e66")
+            meta_files = sorted((tmp / "unpacked").rglob("skill.json"))
+            if not meta_files:
+                return P("No skill.json found inside the archive.",
+                         style="color:#e66")
+            skill_dir = meta_files[0].parent
+            sc = scan_skill_files({"_dir": str(skill_dir)})
+            if not sc["ok"]:
+                issues = ("; ".join(sc["issues"])[:300]
+                          .replace("<", "&lt;"))
+                return P("Static scan failed - nothing imported: "
+                         + issues, style="color:#e66")
+            r = skills.install_from_dir(skill_dir)
+            if not r.get("ok"):
+                return P("Import failed: " + str(r.get("error")),
+                         style="color:#e66")
+            return P("Skill submitted for approval: "
+                     + str(r.get("skill")) + " (static scan clean, "
+                     + str(sc["files_scanned"]) + " file(s) scanned).",
+                     style="color:#4a4")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     @rt("/api/skills")
     def api_skills():
