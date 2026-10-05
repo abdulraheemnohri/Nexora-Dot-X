@@ -1,10 +1,7 @@
-"""ASGI middleware: enforce auth when NEXORA_AUTH_ENABLED=true.
+"""HTTP authentication middleware.
 
-Rules:
-  - /login, static assets and the WebSocket handshake stay open
-  - when enabled, every route requires a Bearer token OR a valid session
-    cookie; pages without either redirect to /login
-Auth disabled => middleware is a no-op.
+WebSocket authentication is handled explicitly by the WebSocket endpoint
+because Starlette HTTP middleware does not reliably gate upgraded sockets.
 """
 import os
 
@@ -31,17 +28,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path.startswith(self.OPEN_PATHS):
             return await call_next(request)
 
-        token = request.cookies.get(COOKIE, "")
-        if token and self.auth.valid_session(token):
-            return await call_next(request)
-
+        session = request.cookies.get(COOKIE, "")
         bearer = (request.headers.get("authorization") or "")
         if bearer.startswith("Bearer "):
             bearer = bearer.removeprefix("Bearer ").strip()
-            if bearer and self.auth.valid_api_token(bearer):
-                return await call_next(request)
+
+        if self.auth.authenticate(session=session, bearer=bearer):
+            return await call_next(request)
 
         if path.startswith("/api/"):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
 
         return RedirectResponse("/login", status_code=303)
+
+
+def websocket_authenticated(websocket) -> bool:
+    """Validate a WebSocket before accepting it."""
+    if os.getenv("NEXORA_AUTH_ENABLED", "false").lower() != "true":
+        return True
+    session = websocket.cookies.get(COOKIE, "")
+    bearer = websocket.query_params.get("token", "")
+    header = websocket.headers.get("authorization", "")
+    if not bearer and header.startswith("Bearer "):
+        bearer = header.removeprefix("Bearer ").strip()
+    return AuthManager().authenticate(session=session, bearer=bearer)
