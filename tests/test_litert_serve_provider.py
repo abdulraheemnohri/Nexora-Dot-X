@@ -37,7 +37,8 @@ class FakeHttp:
 
 
 def test_loopback_allowed_in_local_only(monkeypatch):
-    monkeypatch.setenv("NEXORA_LOCAL_ONLY", "true")
+    import nexora.config as cfg
+    monkeypatch.setattr(cfg.settings, "local_only", True, raising=False)
     p = LiteRTServeProvider(client=FakeHttp())
     assert p._is_loopback() is True
     assert p._allowed() is True
@@ -62,7 +63,8 @@ def test_health_unreachable_when_server_down():
 def test_generate_uses_chat_completions():
     http = FakeHttp()
     p = LiteRTServeProvider(model="gemma4-e2b", client=http)
-    out = p.generate("hello")
+    ou
+t = p.generate("hello")
     assert out == "hello back"
     url, body = http.posts[0]
     assert url.endswith("/v1/chat/completions")
@@ -89,7 +91,8 @@ def test_load_with_explicit_name():
 
 
 def test_non_loopback_blocked_in_local_only(monkeypatch):
-    monkeypatch.setenv("NEXORA_LOCAL_ONLY", "true")
+    import nexora.config as cfg
+    monkeypatch.setattr(cfg.settings, "local_only", True, raising=False)
     p = LiteRTServeProvider(base_url="https://api.example.com", client=FakeHttp())
     assert p._is_loopback() is False
     assert p._allowed() is False
@@ -100,7 +103,8 @@ def test_non_loopback_blocked_in_local_only(monkeypatch):
 
 
 def test_non_loopback_allowed_when_local_only_off(monkeypatch):
-    monkeypatch.setenv("NEXORA_LOCAL_ONLY", "false")
+    import nexora.config as cfg
+    monkeypatch.setattr(cfg.settings, "local_only", False, raising=False)
     p = LiteRTServeProvider(base_url="https://api.example.com", client=FakeHttp())
     assert p._allowed() is True
     assert p.health().status == "ready"
