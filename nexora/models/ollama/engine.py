@@ -17,7 +17,7 @@ class OllamaProvider(ModelProvider):
 
     def _up(self) -> bool:
         try:
-            with self._client() as c:
+            if system_prompt:\n            prompt = system_prompt + "\\n\\n" + prompt\n        with self._client() as c:
                 return c.get("/api/tags").status_code == 200
         except Exception:
             return False
@@ -30,7 +30,7 @@ class OllamaProvider(ModelProvider):
         pass
 
     def generate(self, prompt: str, *, temperature: float = 0.7,
-                 max_tokens: int = 512) -> str:
+                 max_tokens: int = 512, system_prompt: str | None = None) -> str:
         with self._client() as c:
             r = c.post("/api/generate", json={"model": self.model, "prompt": prompt,
                                               "stream": False, "options": {
