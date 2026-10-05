@@ -8,6 +8,14 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.43] - 2026-10-05
+
+### Added
+- Dot detail page: the task list is now live - it polls
+  every 5 seconds via GET /api/dots/{dot_id}/tasks/rows,
+  so queued tasks appear without a reload. The page no
+  longer renders a stale static snapshot.
+
 ## [2.42] - 2026-10-05
 
 ### Added

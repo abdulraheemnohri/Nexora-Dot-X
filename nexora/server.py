@@ -678,9 +678,6 @@ def create_app():
             d = s.get(Dot, dot_id)
             if d is None:
                 return Titled("Dot", H1("Dot not found: " + dot_id))
-            task_rows = list(s.query(Task)
-                             .filter_by(dot_id=dot_id)
-                             .order_by(Task.created_at.desc()))
         rows = "".join(
             "<tr><td>" + k + "</td><td>"
             + str(v).replace("<", "&lt;") + "</td></tr>"
@@ -693,11 +690,6 @@ def create_app():
                          ("Enabled", "yes" if d.enabled else "no"),
                          ("Workspace", d.workspace or ""),
                          ("Created", d.created_at)])
-        tasks_html = ""
-        for t in task_rows:
-            goal = str(t.goal).replace("<", "&lt;")
-            tasks_html += ("<li>[" + str(t.status) + "] "
-                           + goal + " · " + str(t.id) + "</li>")
         return Titled("Dot", H1(d.name),
                       Table(Thead(Th("Field"), Th("Value")),
                             Tr(Td(raw(rows)))),
@@ -709,8 +701,10 @@ def create_app():
                            Button("Queue task"), action="/api/tasks",
                            method="post"),
                       H2("Tasks"),
-                      Ul(raw(tasks_html)) if tasks_html
-                      else P("No tasks for this Dot yet."),
+                      Div(id="dot-tasks-live",
+                          hx_get="/api/dots/" + dot_id + "/tasks/rows",
+                          hx_trigger="load, every 5s",
+                          hx_swap="innerHTML"),
                       P(A("Back to Dots", href="/dots")))
 
     @rt("/api/dots", methods=["POST"])
@@ -721,6 +715,26 @@ def create_app():
             s.add(d)
             s.commit()
         return RedirectResponse("/dots", status_code=303)
+
+    @rt("/api/dots/{dot_id}/tasks/rows")
+    def dot_tasks_rows(dot_id: str):
+        """Live tasks fragment for one Dot (HTMX polling)."""
+        with SessionFactory() as s:
+            d = s.get(Dot, dot_id)
+            if d is None:
+                return P("Dot not found: " + dot_id,
+                         style="color:#e66")
+            task_rows = list(s.query(Task)
+                             .filter_by(dot_id=dot_id)
+                             .order_by(Task.created_at.desc()))
+        if not task_rows:
+            return P("No tasks for this Dot yet.")
+        items = ""
+        for t in task_rows:
+            goal = str(t.goal).replace("<", "&lt;")
+            items += ("<li>[" + str(t.status) + "] " + goal
+                      + " · " + str(t.id) + "</li>")
+        return Ul(raw(items))
 
     @rt("/api/dots/toggle", methods=["POST"])
     def toggle_dot(dot_id: str):
