@@ -24,13 +24,11 @@ class Executor:
         self.approvals = ApprovalCenter()
         self.tools = tool_registry
 
-    def execute(self, step: dict, *, bot_id=None, task_id=None,
-                step_id=None, dry_run=False) -> StepOutcome:
-        """Compatibility wrapper for non-async callers."""
+    def execute(self, step: dict, *, bot_id=None, task_id=None, step_id=None, dry_run=False) -> StepOutcome:
         import asyncio
         return asyncio.run(self.execute_async(step, bot_id=bot_id, task_id=task_id, step_id=step_id, dry_run=dry_run))
 
-    async def execute_async
+    async def execute_async(self, step: dict, *, bot_id=None, task_id=None, step_id=None, dry_run=False) -> StepOutcome:
         tool = step.get("tool") or step.get("kind", "work")
         action = step.get("action") or step.get("description", "")
         decision = self.policy.evaluate(tool, action, dry_run=dry_run)
@@ -63,7 +61,7 @@ class Executor:
                 f"step '{step.get('kind', tool)}' completed "
                 "(no tool side effects configured)",
             )
-        result = self.tools.run(tool, action)
+        result = await self.tools.run_async(tool, action)
         return StepOutcome(
             result.get("ok", True), result.get("output", "")
         )
