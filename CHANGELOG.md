@@ -8,6 +8,18 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.41] - 2026-10-05
+
+### Added
+- Memory page live search: the search box now also runs a
+  debounced live search (400 ms) via GET /api/memory/rows -
+  results appear as you type, no button press needed. The
+  explicit Search button (POST /api/memory/search) still works.
+
+### Changed
+- server.py rebuilt from sha-verified git history; task
+  pagination (V2.38) behavior is unchanged.
+
 ## [2.40] - 2026-10-05
 
 ### Added

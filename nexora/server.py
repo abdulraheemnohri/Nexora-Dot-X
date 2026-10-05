@@ -215,9 +215,13 @@ def create_app():
     def memory_page():
         return Titled("Memory", H1("Memory (federated)"),
                       Form(Input(name="query", placeholder="Search memory...",
-                                 id="mem-q", autofocus=True),
+                                 id="mem-q", autofocus=True,
+                                 hx_get="/api/memory/rows",
+                                 hx_trigger="keyup changed delay:400ms, search",
+                                 hx_target="#mem-live", hx_swap="innerHTML"),
                            Button("Search"), hx_post="/api/memory/search",
                            hx_target="#mem-results", hx_swap="innerHTML"),
+                      Div(id="mem-live"),
                       Details(Open(False), Summary("Remember something new"),
                               Form(Input(name="content", placeholder="Content",
                                          required=True),
@@ -252,6 +256,34 @@ def create_app():
                           + str(conf) + "</small>")
             content = str(h.get("content", "")).replace("<", "&lt;")
             items.append("<li>" + content + badge + "</li>")
+        return Ul(raw("".join(items)))
+
+    @rt("/api/memory/rows")
+    def memory_rows(query: str = ""):
+        """Live search fragment: debounced memory search (HTMX)."""
+        query = (query or "").strip()
+        if not query:
+            return P("Type to search memories (live).",
+                     style="color:#999")
+        hits = memory.search_detailed(query, limit=100)
+        if not hits:
+            return P("No memories found.")
+        items = []
+        for h in hits:
+            badge = ""
+            kind = h.get("kind")
+            if kind:
+                color = {"user": "#06c", "semantic": "#4a4",
+                         "project": "#a60", "episodic": "#555"}.get(kind,
+                                    "#999")
+                badge = (" <small style='color:" + color + "'>["
+                         + str(kind) + "]</small>")
+            conf = h.get("confidence")
+            if conf is not None:
+                badge += (" <small style='color:#999'>conf "
+                          + str(conf) + "</small>")
+            text = str(h.get("content", "")).replace("<", "&lt;")
+            items.append("<li>" + text + badge + "</li>")
         return Ul(raw("".join(items)))
 
     @rt("/api/memory/remember", methods=["POST"])
@@ -682,16 +714,21 @@ def create_app():
     def tasks_rows(status: str = "", page: int = 1):
         """Live task table fragment (HTMX polling every 5s).
 
-        Optional ?status= filter narrows the list; ?page= paginates
-        (20 per page). Non-terminal tasks get a Cancel button.
+        Optional ?status= filter narrows the list to one status.
+        Optional ?page= selects a 20-task page (1-based).
+        Non-terminal tasks get an inline Cancel button.
         """
-        page = max(1, page)
-        all_rows = tasks.list(status=(status or None), limit=10000)
-        total = len(all_rows)
+        try:
+            page = max(1, int(page))
+        except (TypeError, ValueError):
+            page = 1
+        all_tasks = tasks.list(status=(status or None))
+        total = len(all_tasks)
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
         start = (page - 1) * PAGE_SIZE
-        page_rows = all_rows[start:start + PAGE_SIZE]
+        page_tasks = all_tasks[start:start + PAGE_SIZE]
         rows = ""
-        for t in page_rows:
+        for t in page_tasks:
             goal = str(t.goal).replace("<", "&lt;")
             rows += ("<tr><td>" + goal + "</td><td>"
                      + str(t.status) + "</td><td>"
@@ -712,24 +749,22 @@ def create_app():
             return P("No tasks"
                      + ((" with status " + status) if status else "")
                      + ".")
-        html = ("<table><tr><th>Goal</th><th>Status</th><th>ID</th>"
-                "<th></th><th></th></tr>" + rows + "</table>")
-        pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        nav = ""
         if pages > 1:
             links = ""
-            qs = (("status=" + status + "&") if status else "")
             for p in range(1, pages + 1):
+                href = ("/api/tasks/rows?page=" + str(p)
+                        + (("&status=" + status) if status else ""))
                 if p == page:
                     links += " <b>[" + str(p) + "]</b>"
                 else:
-                    links += (' <a hx_get="/api/tasks/rows?' + qs
-                              + 'page=' + str(p)
-                              + '" hx_target="#tasks-live" '
-                              'hx_swap="innerHTML">[' + str(p)
-                              + ']</a>')
-            html += ("<p>Page " + str(page) + " of " + str(pages)
-                     + " (" + str(total) + " tasks):" + links + "</p>")
-        return raw(html)
+                    links += (' <a href="' + href + '" hx_get="'
+                              + href + '" hx_target="#tasks-live" '
+                              'hx_swap="innerHTML">' + str(p) + "</a>")
+            nav = ("<p>Page " + str(page) + " of " + str(pages)
+                   + ": " + links.strip() + "</p>")
+        return raw("<table><tr><th>Goal</th><th>Status</th><th>ID</th>"
+                   "<th></th><th></th></tr>" + rows + "</table>" + nav)
 
     @rt("/api/tasks/detail", methods=["POST"])
     def task_detail(task_id: str):
