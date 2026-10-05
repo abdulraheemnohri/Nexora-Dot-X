@@ -8,6 +8,23 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.24] - 2026-10-05
+
+### Added
+- README "0.2.0 Highlights" section: skills system end-to-end
+  (approval gate, static scan, run + CLI), model management UI,
+  litert-lm integration, always-allow grants, richer status,
+  local-first security.
+
+## [2.23] - 2026-10-05
+
+### Added
+- nexora skills CLI subcommands:
+  - list (with --pending filter)
+  - approve / reject (user approval gate from the terminal)
+  - scan (static safety scan on a skill's files)
+  - run (execute an approved skill; scan re-checked first)
+
 ## [2.22] - 2026-10-05
 
 ### Added
@@ -62,7 +79,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Skill scanner findings surfaced in the /skills UI:
-  - Static scan column for every pending skill (forbidden
+  - Static scan column for ev
+ery pending skill (forbidden
     imports/calls, network use, syntax errors)
   - Scan button to re-run the safety scan on demand
   - POST /api/skills/scan route
@@ -131,7 +149,8 @@ e):
 
 ### Added
 - litert-serve model-bus provider: uses the official
-  litert-lm serve OpenAI-compatible server
+  litert-lm se
+rve OpenAI-compatible server
   (GET /v1/models, POST /v1/chat/completions).
 - Loopback URLs allowed in local-only mode (on-device);
   non-loopback URLs blocked while NEXORA_LOCAL_ONLY=true.
@@ -202,7 +221,8 @@ tart.
 ## [2.2] - 2026-10-03
 
 ### Added
-- Memory federation service, model service, auth manager,
+- Memory federation service, model servi
+ce, auth manager,
   backup/restore system, backup CLI, password hashing.
 - Chat page, terminal sessions UI, skills page, docs
   (AUTH, BACKUP).
