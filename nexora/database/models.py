@@ -53,7 +53,7 @@ class Approval(Base):
     action = Column(Text, nullable=False)
     reason = Column(Text, default="")
     risk = Column(String, default="medium")
-    status = Column(String, default="pending")  # pending/approved/rejected
+    status = Column(String, default="pending")  # pending/approved/rejected/executing/executed/failed
     created_at = Column(Float, default=now)
     decided_at = Column(Float, nullable=True)
 
