@@ -1,6 +1,9 @@
+from time import time
+
 from fasthtml.common import *
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from nexora import __version__
 from nexora.config import settings
 from nexora.database.runtime import SessionFactory
 from nexora.database.models import Dot
@@ -64,6 +67,8 @@ document.getElementById('chat-form').onsubmit = function(ev) {
 };
 if (window.WebSocket) connect();"""
 
+START_TIME = time()
+
 
 def create_app():
     app, rt = fast_app()
@@ -96,9 +101,21 @@ def create_app():
 
     @rt("/api/status")
     def status():
-        return {"status": "ready", "local_only": settings.local_only,
-                "database": "sqlite", "profile": get_profile().name,
-                "model": models.ready_backend()}
+        return {"status": "ready",
+                "version": __version__,
+                "local_only": settings.local_only,
+                "auth_enabled": settings.auth_enabled,
+                "database": "sqlite",
+                "profile": get_profile().name,
+                "uptime_seconds": round(time() - START_TIME, 1),
+                "model": models.ready_backend(),
+                "models": [{"backend": m["backend"],
+                            "status": m["status"],
+                            "model": m["model"]}
+                           for m in models.status()],
+                "pending_approvals": len(approvals.pending()),
+                "always_allow_grants": len(grants_store.list_grants()),
+                "pending_skills": len(skills.pending())}
 
     @rt("/login")
     def login_page():
