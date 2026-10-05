@@ -85,7 +85,6 @@ def create_app():
 
     @rt("/")
     def home():
-        ready = models.ready_backend()
         return Titled("Nexora Dot X",
                       H1("Nexora Dot X"),
                       P("Local-first autonomous AI control center"),
@@ -97,9 +96,11 @@ def create_app():
                           A("Tasks", href="/tasks"), " · ",
                           A("Approvals", href="/approvals"), " · ",
                           A("Settings", href="/settings")),
-                      P("Local-only: " + str(settings.local_only)
-                        + " · Profile: " + get_profile().name
-                        + " · Model: " + (ready or "none ready")))
+                      H2("Live status"),
+                      Div(id="status-live",
+                          hx_get="/api/status/card",
+                          hx_trigger="load, every 5s",
+                          hx_swap="innerHTML"))
 
     @rt("/api/status")
     def status():
@@ -118,6 +119,34 @@ def create_app():
                 "pending_approvals": len(approvals.pending()),
                 "always_allow_grants": len(grants_store.list_grants()),
                 "pending_skills": len(skills.pending())}
+
+    @rt("/api/status/card")
+    def status_card():
+        """HTML fragment for the home live dashboard (HTMX polling)."""
+        ready = models.ready_backend()
+        rows = ""
+        for m in models.status():
+            rows += ("<tr><td>" + m["backend"] + "</td><td>"
+                     + m["status"] + "</td><td>"
+                     + str(m["model"]).replace("<", "&lt;")
+                     + "</td></tr>")
+        uptime = round(time() - START_TIME, 0)
+        html = (
+            "<p>Version: " + __version__
+            + " · Profile: " + get_profile().name
+            + " · Uptime: " + str(int(uptime // 60)) + "m "
+            + str(int(uptime % 60)) + "s</p>"
+            "<p>Local-only: " + str(settings.local_only)
+            + " · Auth: " + str(settings.auth_enabled)
+            + " · Model: " + (ready or "none ready") + "</p>"
+            "<p>Pending approvals: " + str(len(approvals.pending()))
+            + " · Always-allow grants: "
+            + str(len(grants_store.list_grants()))
+            + " · Pending skills: " + str(len(skills.pending())) + "</p>")
+        if rows:
+            html += ("<table><tr><th>Backend</th><th>Status</th>"
+                     "<th>Model</th></tr>" + rows + "</table>")
+        return raw(html)
 
     @rt("/login")
     def login_page():
@@ -365,6 +394,11 @@ def create_app():
                 + 'hx_target="#skills-result" hx_swap="innerHTML">'
                 + '<input type="hidden" name="name" value="'
                 + str(s.get("name", "")) + '"><button>Scan</button></form>'
+                + "</td><td>"
+                + '<form hx_post="/api/skills/detail" '
+                + 'hx_target="#skills-result" hx_swap="innerHTML">'
+                + '<input type="hidden" name="name" value="'
+                + str(s.get("name", "")) + '"><button>Detail</button></form>'
                 + "</td></tr>")
         act_rows = ""
         for s in active:
@@ -391,19 +425,24 @@ def create_app():
                 + 'hx_target="#skills-result" hx_swap="innerHTML">'
                 + '<input type="hidden" name="name" value="'
                 + str(s.get("name", "")) + '"><button>Scan</button></form>'
+                + "</td><td>"
+                + '<form hx_post="/api/skills/detail" '
+                + 'hx_target="#skills-result" hx_swap="innerHTML">'
+                + '<input type="hidden" name="name" value="'
+                + str(s.get("name", "")) + '"><button>Detail</button></form>'
                 + "</td></tr>")
         return Titled("Skills", H1("Skills"),
                       H2("Pending approval"),
                       (Table(Thead(Th("Name"), Th("Description"),
                                    Th("Static scan"), Th(""), Th(""),
-                                   Th("")),
+                                   Th(""), Th("")),
                              Tr(Td(raw(pend_rows))))
                        if pending
                        else P("No skills awaiting approval.")),
                       H2("Active skills"),
                       (Table(Thead(Th("Name"), Th("Description"),
                                    Th("Status"), Th("Static scan"),
-                                   Th("Run"), Th("")),
+                                   Th("Run"), Th(""), Th("")),
                              Tr(Td(raw(act_rows))))
                        if active else P("No active skills yet.")),
                       P("Self-grown skills require explicit user approval - "
@@ -441,6 +480,46 @@ def create_app():
                        for i in r["issues"])
         return Div(P("Findings for " + name + ":", style="color:#e66"),
                    Ul(raw(items)))
+
+    @rt("/api/skills/detail", methods=["POST"])
+    def skill_detail(name: str):
+        s = skills.inspect(name)
+        if not s:
+            return P("Skill not found: " + name, style="color:#e66")
+        meta = {k: v for k, v in s.items()
+                if not str(k).startswith("_")}
+        meta_rows = "".join(
+            "<tr><td>" + str(k).replace("<", "&lt;") + "</td><td>"
+            + str(v).replace("<", "&lt;") + "</td></tr>"
+            for k, v in sorted(meta.items()))
+        html = "<h3>Skill: " + str(s.get("name", name)) + "</h3>"
+        if meta_rows:
+            html += ("<table><tr><th>Field</th><th>Value</th></tr>"
+                     + meta_rows + "</table>")
+        sc = scan_skill_files(s)
+        if sc["ok"]:
+            html += ("<p style='color:#4a4'>Static scan: clean ("
+                     + str(sc["files_scanned"]) + " file(s))</p>")
+        else:
+            items = "".join("<li>" + i.replace("<", "&lt;") + "</li>"
+                            for i in sc["issues"])
+            html += ("<p style='color:#e66'>Static scan findings:</p>"
+                     "<ul>" + items + "</ul>")
+        skill_dir = s.get("_dir") or ""
+        files = ""
+        if skill_dir:
+            from pathlib import Path
+            d = Path(skill_dir)
+            if d.exists():
+                for f in sorted(d.glob("**/*")):
+                    if f.is_file():
+                        size = f.stat().st_size
+                        files += ("<li>"
+                                  + f.relative_to(d).as_posix()
+                                  + " (" + str(size) + " bytes)</li>")
+        if files:
+            html += "<h4>Files</h4><ul>" + files + "</ul>"
+        return raw(html)
 
     @rt("/api/skills/run", methods=["POST"])
     def skill_run(name: str, payload: str = ""):
