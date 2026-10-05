@@ -8,6 +8,32 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.16] - 2026-10-05
+
+### Added
+- Skill scanner findings surfaced in the /skills UI:
+  - Static scan column for every pending skill (forbidden
+    imports/calls, network use, syntax errors)
+  - Scan button to re-run the safety scan on demand
+  - POST /api/skills/scan route
+- scan_skill_files() helper in nexora/skills/scanner.py
+  (scans all Python files of a skill directory).
+- Tests for the skill scanner (tests/test_skill_scanner.py).
+
+## [2.15] - 2026-10-05
+
+### Added
+- Richer /api/status: version, uptime, profile, auth and
+  local-only flags, per-backend model list, pending approvals,
+  always-allow grants and pending skills counts.
+
+## [2.14] - 2026-10-05
+
+### Added
+- nexora start --with-litert-serve [--serve-port N]:
+  auto-attaches the litert-lm OpenAI-compatible server to the
+  worker startup.
+
 ## [2.13] - 2026-10-05
 
 ### Added
