@@ -63,7 +63,25 @@ class Executor:
             result.get("ok", True), result.get("output", "")
         )
 
-    def resume(self, approval_id: str) -> StepOutcome:
+    async def execute_async(self, step: dict, *, bot_id=None, task_id=None, step_id=None, dry_run=False) -> StepOutcome:
+        tool = step.get("tool") or step.get("kind", "work")
+        action = step.get("action") or step.get("description", "")
+        decision = self.policy.evaluate(tool, action, dry_run=dry_run)
+        audit("agent", bot_id=bot_id, task_id=task_id, tool=tool, action=action, decision=decision.decision.value, outcome=decision.reason)
+        if decision.decision is Decision.BLOCK:
+            return StepOutcome(False, f"BLOCKED by policy: {decision.reason}")
+        if decision.decision is Decision.ASK:
+            a = self.approvals.request(tool, action, decision.reason, decision.risk.value, task_id=task_id, step_id=step_id)
+            bus.publish("approval.requested", {"id": a.id, "tool": tool, "action": action})
+            return StepOutcome(False, "waiting for user approval", pending_approval=a.id)
+        if dry_run:
+            return StepOutcome(True, f"[dry-run] would execute {tool}: {action}")
+        if self.tools is None:
+            return StepOutcome(True, f"step '{step.get('kind', tool)}' completed (no tool side effects configured)")
+        result = await self.tools.run_async(tool, action)
+        return StepOutcome(result.get("ok", True), result.get("output", ""))
+
+    async def resume_async(self, approval_id: str) -> StepOutcome:
         """Execute only the exact action that the user approved.
 
         A pending approval contains the canonical tool and action. Because the
@@ -91,7 +109,7 @@ class Executor:
             if self.tools is None:
                 result = {"ok": True, "output": f"approved action recorded: {tool}: {action}"}
             else:
-                result = self.tools.run(tool, action)
+                result = await self.tools.run_async(tool, action)
             if result.get("ok", True):
                 self.approvals.mark_executed(approval_id)
             else:
