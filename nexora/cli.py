@@ -397,6 +397,29 @@ def skills_run(name: str = typer.Argument(..., help="Skill name"),
     typer.echo(str(r.get("result")))
 
 
+@skills.command("export")
+def skills_export(name: str = typer.Argument(..., help="Skill name"),
+                  out: str = typer.Option(".", "--out", "-o",
+                                          help="Output directory")):
+    """Export a skill as a .zip archive (share between installs)."""
+    import shutil
+    from pathlib import Path
+    from nexora.skills.manager import SkillManager
+    s = SkillManager().inspect(name)
+    if not s:
+        typer.secho("Skill not found: " + name, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    skill_dir = Path(s.get("_dir") or "")
+    if not skill_dir.exists():
+        typer.secho("Skill directory missing: " + str(skill_dir),
+                    fg=typer.colors.RED)
+        raise typer.Exit(1)
+    dest = Path(out)
+    dest.mkdir(parents=True, exist_ok=True)
+    archive = shutil.make_archive(str(dest / name), "zip", skill_dir)
+    typer.echo(f"Exported: {archive}")
+
+
 def main():
     cli()
 
