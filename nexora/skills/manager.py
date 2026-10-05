@@ -62,6 +62,9 @@ class SkillManager:
         target.mkdir(parents=True, exist_ok=True)
         meta = dict(meta)
         meta["name"] = name
+        validation = validate_metadata(meta)
+        if not validation["ok"]:
+            return {"ok": False, "error": "; ".join(validation["issues"])}
         (target / "skill.json").write_text(
             json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         for rel, content in (files or {}).items():
@@ -80,6 +83,9 @@ class SkillManager:
         if target.exists():
             shutil.rmtree(target)
         shutil.move(str(src), str(target))
+        scan = scan_skill_files({**json.loads((target / "skill.json").read_text(encoding="utf-8")), "_dir": str(target)})
+        if not scan["ok"]:
+            return {"ok": False, "error": "static scan failed: " + "; ".join(scan["issues"])}
         bus.publish("skill.approved", {"name": name})
         return {"ok": True, "skill": name, "status": "active"}
 
