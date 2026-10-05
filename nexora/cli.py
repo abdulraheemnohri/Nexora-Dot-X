@@ -397,6 +397,54 @@ def skills_run(name: str = typer.Argument(..., help="Skill name"),
     typer.echo(str(r.get("result")))
 
 
+@skills.command("import")
+def skills_import(
+    archive: str = typer.Argument(..., help="Path to a skill .zip archive"),
+):
+    """Import a skill from a .zip archive into the pending queue.
+
+    The imported skill lands in skills/.pending/ and must be approved
+    explicitly (System 1) before it becomes active.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+    from nexora.skills.manager import SkillManager
+
+    src = Path(archive)
+    if not src.exists():
+        typer.secho("Archive not found: " + archive, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    tmp_root = Path(tempfile.mkdtemp(prefix="nexora-skill-import-"))
+    try:
+        try:
+            shutil.unpack_archive(str(src), str(tmp_root), "zip")
+        except Exception as e:
+            typer.secho("Not a valid .zip archive: " + str(e),
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+        meta_files = sorted(tmp_root.rglob("skill.json"))
+        if not meta_files:
+            typer.secho("No skill.json found inside the archive.",
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+        skill_src = meta_files[0].parent
+        try:
+            r = SkillManager().install_from_dir(skill_src)
+        except Exception as e:
+            typer.secho("Import failed: " + str(e), fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if not r.get("ok"):
+            typer.secho("Import failed: " + r.get("error", ""),
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.echo(f"Imported skill '{r.get('skill')}' to pending - "
+                   "approve with: nexora skills approve "
+                   + str(r.get("skill")))
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
 @skills.command("export")
 def skills_export(name: str = typer.Argument(..., help="Skill name"),
                   out: str = typer.Option(".", "--out", "-o",
