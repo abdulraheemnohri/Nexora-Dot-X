@@ -240,7 +240,7 @@ def create_app():
             if kind:
                 color = {"user": "#06c", "semantic": "#4a4",
                          "project": "#a60", "episodic": "#555"}.get(kind,
-                                                                    "#999")
+                                    "#999")
                 badge = (" <small style='color:" + color + "'>["
                          + str(kind) + "]</small>")
             conf = h.get("confidence")
@@ -340,8 +340,8 @@ def create_app():
                      + str(r.get("error", "unknown error")),
                      style="color:#e66")
         return P("Unloaded " + str(r.get("backend")) + " ("
-                 + str(r.get("status")) + ")",
-                 style="color:#4a4")
+                  + str(r.get("status")) + ")",
+                  style="color:#4a4")
 
     @rt("/api/models/discover", methods=["POST"])
     def models_discover():
@@ -563,7 +563,14 @@ def create_app():
                            method="post"),
                       *(Div(H3(d.name),
                             P(d.mission or "No mission"),
-                            P("Enabled" if d.enabled else "Paused"))
+                            P(("Enabled" if d.enabled else "Paused")
+                               + " · " + d.id),
+                            Form(Button(("Pause" if d.enabled
+                                         else "Resume")),
+                                 action="/api/dots/toggle",
+                                 method="post"),
+                            Input(type="hidden", name="dot_id",
+                                  value=d.id))
                         for d in items))
 
     @rt("/api/dots", methods=["POST"])
@@ -572,6 +579,17 @@ def create_app():
         with SessionFactory() as s:
             d = Dot(id=uuid.uuid4().hex, name=name, mission=mission)
             s.add(d)
+            s.commit()
+        return RedirectResponse("/dots", status_code=303)
+
+    @rt("/api/dots/toggle", methods=["POST"])
+    def toggle_dot(dot_id: str):
+        """Enable/pause a Dot (paused Dots stop receiving new work)."""
+        with SessionFactory() as s:
+            d = s.get(Dot, dot_id)
+            if d is None:
+                return P("Dot not found: " + dot_id, style="color:#e66")
+            d.enabled = not d.enabled
             s.commit()
         return RedirectResponse("/dots", status_code=303)
 
@@ -584,9 +602,66 @@ def create_app():
                                  required=True),
                            Button("Queue task"), action="/api/tasks",
                            method="post"),
-                      *(Div(H3(t.goal),
-                            P(f"{t.status} · {t.id}"))
-                        for t in tasks.list()))
+                      Div(id="tasks-live",
+                          hx_get="/api/tasks/rows",
+                          hx_trigger="load, every 5s",
+                          hx_swap="innerHTML"),
+                      Div(id="tasks-result"))
+
+    @rt("/api/tasks/rows")
+    def tasks_rows():
+        """Live task table fragment (HTMX polling every 5s)."""
+        rows = ""
+        for t in tasks.list():
+            goal = str(t.goal).replace("<", "&lt;")
+            rows += ("<tr><td>" + goal + "</td><td>"
+                     + str(t.status) + "</td><td>"
+                     + str(t.id) + "</td><td>"
+                     + '<form hx_post="/api/tasks/detail" '
+                     + 'hx_target="#tasks-result" hx_swap="innerHTML">'
+                     + '<input type="hidden" name="task_id" value="'
+                     + str(t.id) + '"><button>Detail</button></form>'
+                     + "</td></tr>")
+        if not rows:
+            return P("No tasks yet.")
+        return raw("<table><tr><th>Goal</th><th>Status</th><th>ID</th>"
+                   "<th></th></tr>" + rows + "</table>")
+
+    @rt("/api/tasks/detail", methods=["POST"])
+    def task_detail(task_id: str):
+        """Show one task: goal, status, plan steps, result, error."""
+        t = tasks.get(task_id)
+        if t is None:
+            return P("Task not found: " + task_id, style="color:#e66")
+        plan = tasks.get_plan(t)
+        plan_items = ""
+        for step in (plan or []):
+            plan_items += ("<li>"
+                           + str(step).replace("<", "&lt;")
+                           + "</li>")
+        rows = "".join(
+            "<tr><td>" + k + "</td><td>"
+            + str(v).replace("<", "&lt;") + "</td></tr>"
+            for k, v in [
+                ("ID", t.id),
+                ("Dot", t.dot_id),
+                ("Goal", t.goal),
+                ("Status", t.status),
+                ("Priority", t.priority),
+                ("Result", t.result or ""),
+                ("Error", t.error or ""),
+                ("Created", t.created_at),
+                ("Updated", t.updated_at)])
+        html = ("<h3>Task: " + str(t.goal).replace("<", "&lt;")
+                 + "</h3>"
+                 "<table><tr><th>Field</th><th>Value</th></tr>"
+                 + rows + "</table>")
+        html += "<h4>Plan</h4>"
+        if plan_items:
+            html += "<ul>" + plan_items + "</ul>"
+        else:
+            html += P("No plan steps recorded.")
+        return raw(html)
 
     @rt("/api/tasks", methods=["POST"])
     async def create_task(dot_id: str, goal: str):
@@ -598,7 +673,7 @@ def create_app():
         plan = planner.plan(goal)
         if not plan:
             tasks.set_status(task.id, "FAILED",
-                            "Planner returned no steps")
+                             "Planner returned no steps")
             return task
         tasks.set_status(task.id, "PLANNING")
         tasks.set_status(task.id, "RUNNING")
