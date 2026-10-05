@@ -13,6 +13,8 @@ from nexora.core.planner import Planner
 from nexora.core.chat_service import ChatService
 from nexora.core.memory_service import MemoryService
 from nexora.core.model_service import ModelService
+from nexora.core.worker_runtime import WorkerRuntime
+from nexora.core.autonomous_worker import AutonomousWorker
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
@@ -86,6 +88,21 @@ def create_app():
     models = ModelService()
     auth = AuthManager()
     skills = SkillManager()
+    worker_runtime = WorkerRuntime(AutonomousWorker(tasks))
+
+    async def _worker_executor(step):
+        # Execution remains intentionally injected behind System 1. The server
+        # lifecycle owns the worker; no model/tool bypass is introduced here.
+        return "step queued for authorized runtime execution"
+
+    async def _start_worker():
+        await worker_runtime.start(_worker_executor)
+
+    async def _stop_worker():
+        await worker_runtime.stop()
+
+    app.add_event_handler("startup", _start_worker)
+    app.add_event_handler("shutdown", _stop_worker)
 
     @rt("/")
     def home():
@@ -126,7 +143,8 @@ def create_app():
                            for m in models.status()],
                 "pending_approvals": len(approvals.pending()),
                 "always_allow_grants": len(grants_store.list_grants()),
-                "pending_skills": len(skills.pending())}
+                "pending_skills": len(skills.pending()),
+                "worker_running": worker_runtime.running}
 
     @rt("/api/status/card")
     def status_card():
@@ -150,7 +168,8 @@ def create_app():
             "<p>Pending approvals: " + str(len(approvals.pending()))
             + " · Always-allow grants: "
             + str(len(grants_store.list_grants()))
-            + " · Pending skills: " + str(len(skills.pending())) + "</p>")
+            + " · Pending skills: " + str(len(skills.pending())) + " · Worker: "
+            + ("running" if worker_runtime.running else "stopped") + "</p>")
         if rows:
             html += ("<table><tr><th>Backend</th><th>Status</th>"
                      "<th>Model</th></tr>" + rows + "</table>")
