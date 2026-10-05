@@ -953,7 +953,7 @@ def create_app():
             return None, "Approval not found"
         if not approval.task_id or not approval.step_id:
             return None, "Approval is not linked to a task step"
-        outcome = await asyncio.to_thread(step_runner.executor.resume, approval_id)
+        outcome = await step_runner.executor.resume_async(approval_id)
         step = repo.get_by_id(TaskStep, approval.step_id)
         if step is None:
             return outcome, "Linked task step not found"
