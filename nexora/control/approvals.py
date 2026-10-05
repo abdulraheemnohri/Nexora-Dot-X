@@ -21,8 +21,8 @@ except Exception:
 
 class ApprovalCenter:
     def request(self, tool: str, action: str, reason: str = "",
-                risk: str = "medium") -> Approval:
-        a = Approval(tool=tool, action=action, reason=reason, risk=risk)
+                risk: str = "medium", task_id: str | None = None, step_id: str | None = None) -> Approval:
+        a = Approval(tool=tool, action=action, reason=reason, risk=risk, task_id=task_id, step_id=step_id)
         return repo.add_obj(a)
 
     def pending(self) -> list:
