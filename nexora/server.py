@@ -846,10 +846,11 @@ def create_app():
         t = tasks.get(task_id)
         if t is None:
             return P("Task not found: " + task_id, style="color:#e66")
-        plan = tasks.get_plan(t)
+        plan = tasks.get_plan(t) or []
+        n_steps = len(plan)
         plan_items = ""
-        for step in (plan or []):
-            plan_items += ("<li>"
+        for idx, step in enumerate(plan, start=1):
+            plan_items += ("<li><b>Step " + str(idx) + "/" + str(n_steps) + "</b> - "
                            + str(step).replace("<", "&lt;")
                            + "</li>")
         rows = "".join(
@@ -869,9 +870,10 @@ def create_app():
                  + "</h3>"
                  "<table><tr><th>Field</th><th>Value</th></tr>"
                  + rows + "</table>")
-        html += "<h4>Plan</h4>"
+        html += ("<h4>Plan (" + str(n_steps) + " step(s), status: "
+                 + str(t.status) + ")</h4>")
         if plan_items:
-            html += "<ul>" + plan_items + "</ul>"
+            html += "<ol>" + plan_items + "</ol>"
         else:
             html += P("No plan steps recorded.")
         return raw(html)

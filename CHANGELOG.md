@@ -3,6 +3,14 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.45] - 2026-10-05
+
+### Changed
+- Task detail view: plan steps are now a numbered
+  breakdown - each step shows "Step k/n" and the plan
+  header shows the total step count plus the task
+  status, so execution progress is easier to read.
+
 ## [Unreleased]
 
 ### Added
