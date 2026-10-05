@@ -13,6 +13,8 @@ skills = typer.Typer(no_args_is_help=True)
 cli.add_typer(skills, name="skills")
 tasks = typer.Typer(no_args_is_help=True)
 cli.add_typer(tasks, name="tasks")
+dots = typer.Typer(no_args_is_help=True)
+cli.add_typer(dots, name="dots")
 
 DEFAULT_LITERT_MODEL = "litert-community/gemma-4-E2B-it-litert-lm"
 DEFAULT_LITERT_FILE = "gemma-4-E2B-it.litertlm"
@@ -402,10 +404,106 @@ def skills_run(name: str = typer.Argument(..., help="Skill name"),
     typer.echo(str(r.get("result")))
 
 
-def _import_skill_from_dir(skill_src) -> dict:
-    """Shared import path: move an unpacked skill dir into pending."""
-    from nexora.skills.manager import SkillManager
-    return SkillManager().install_from_dir(skill_src)
+def _unpack_skill_zip(archive: str = None, url: str = None,
+                      allow_network: bool = False, tmp_root=None):
+    """Unpack a skill .zip (local path or URL) and return the skill dir.
+
+    Raises SystemExit(1) with a message on any failure.
+    """
+    import shutil
+    from pathlib import Path
+
+    if url:
+        if not allow_network:
+            typer.secho("URL import contacts the network - re-run "
+                        "with --allow-network to confirm.",
+                        fg=typer.colors.YELLOW)
+            raise typer.Exit(1)
+        import urllib.request
+        zip_path = tmp_root / "downloaded.zip"
+        typer.echo(f"Downloading {url} ...")
+        try:
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                zip_path.write_bytes(resp.read())
+        except Exception as e:
+            typer.secho("Download failed: " + str(e), fg=typer.colors.RED)
+            raise typer.Exit(1)
+    else:
+        zip_path = Path(archive)
+        if not zip_path.exists():
+            typer.secho("Archive not found: " + archive,
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+    try:
+        shutil.unpack_archive(str(zip_path), str(tmp_root), "zip")
+    except Exception as e:
+        typer.secho("Not a valid .zip archive: " + str(e),
+                    fg=typer.colors.RED)
+        raise typer.Exit(1)
+    meta_files = sorted(tmp_root.rglob("skill.json"))
+    if not meta_files:
+        typer.secho("No skill.json found inside the archive.",
+                    fg=typer.colors.RED)
+        raise typer.Exit(1)
+    return meta_files[0].parent
+
+
+@skills.command("validate")
+def skills_validate(
+    archive: str = typer.Argument(None, help="Path to a skill .zip archive"),
+    url: str = typer.Option(None, "--url", "-u",
+                            help="Validate a .zip from this URL"),
+    allow_network: bool = typer.Option(
+        False, "--allow-network", "-y",
+        help="Explicitly allow the network download (local-only "
+             "default: off)"),
+):
+    """Dry-run check of a skill .zip: structure + static safety scan.
+
+    Nothing is imported - the skill is unpacked to a temp dir only.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+    from nexora.skills.scanner import scan_skill_files
+
+    if not archive and not url:
+        typer.secho("Provide a .zip path or --url <url>.",
+                    fg=typer.colors.RED)
+        raise typer.Exit(1)
+    tmp_root = Path(tempfile.mkdtemp(prefix="nexora-skill-validate-"))
+    try:
+        skill_src = _unpack_skill_zip(archive=archive, url=url,
+                                     allow_network=allow_network,
+                                     tmp_root=tmp_root)
+        meta_file = skill_src / "skill.json"
+        import json
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            typer.secho("Invalid skill.json: " + str(e),
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+        name = meta.get("name") or skill_src.name
+        typer.echo(f"Skill:    {name}")
+        typer.echo(f"Desc:     {meta.get('description', '')}")
+        files = [f for f in sorted(skill_src.glob("**/*")) if f.is_file()]
+        typer.echo(f"Files:    {len(files)}")
+        for f in files:
+            typer.echo("  - " + f.relative_to(skill_src).as_posix())
+        meta["_dir"] = str(skill_src)
+        r = scan_skill_files(meta)
+        if r["ok"]:
+            typer.echo(f"Scan:     clean ({r['files_scanned']} file(s))")
+            typer.secho("Valid: skill can be imported to pending "
+                        "with: nexora skills import", fg=typer.colors.GREEN)
+        else:
+            typer.secho("Scan findings:", fg=typer.colors.RED)
+            for i in r["issues"]:
+                typer.echo("  - " + i)
+            raise typer.Exit(1)
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 @skills.command("import")
@@ -426,6 +524,7 @@ def skills_import(
     import shutil
     import tempfile
     from pathlib import Path
+    from nexora.skills.manager import SkillManager
 
     if not archive and not url:
         typer.secho("Provide a .zip path or --url <url>.", fg=typer.colors.RED)
@@ -433,41 +532,11 @@ def skills_import(
 
     tmp_root = Path(tempfile.mkdtemp(prefix="nexora-skill-import-"))
     try:
-        if url:
-            if not allow_network:
-                typer.secho("URL import contacts the network - re-run "
-                            "with --allow-network to confirm.",
-                            fg=typer.colors.YELLOW)
-                raise typer.Exit(1)
-            import urllib.request
-            zip_path = tmp_root / "downloaded.zip"
-            typer.echo(f"Downloading {url} ...")
-            try:
-                with urllib.request.urlopen(url, timeout=30) as resp:
-                    zip_path.write_bytes(resp.read())
-            except Exception as e:
-                typer.secho("Download failed: " + str(e), fg=typer.colors.RED)
-                raise typer.Exit(1)
-        else:
-            zip_path = Path(archive)
-            if not zip_path.exists():
-                typer.secho("Archive not found: " + archive,
-                            fg=typer.colors.RED)
-                raise typer.Exit(1)
+        skill_src = _unpack_skill_zip(archive=archive, url=url,
+                                      allow_network=allow_network,
+                                      tmp_root=tmp_root)
         try:
-            shutil.unpack_archive(str(zip_path), str(tmp_root), "zip")
-        except Exception as e:
-            typer.secho("Not a valid .zip archive: " + str(e),
-                        fg=typer.colors.RED)
-            raise typer.Exit(1)
-        meta_files = sorted(tmp_root.rglob("skill.json"))
-        if not meta_files:
-            typer.secho("No skill.json found inside the archive.",
-                        fg=typer.colors.RED)
-            raise typer.Exit(1)
-        skill_src = meta_files[0].parent
-        try:
-            r = _import_skill_from_dir(skill_src)
+            r = SkillManager().install_from_dir(skill_src)
         except Exception as e:
             typer.secho("Import failed: " + str(e), fg=typer.colors.RED)
             raise typer.Exit(1)
@@ -565,6 +634,86 @@ def tasks_cancel(task_id: str = typer.Argument(..., help="Task ID")):
         typer.secho("Task not found: " + task_id, fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.echo(f"Task cancelled: {t.id}")
+
+
+# ---- dots CLI -----------------------------------------------------------
+
+@dots.command("list")
+def dots_list(enabled_only: bool = typer.Option(
+        False, "--enabled", help="Only enabled Dots")):
+    """List Dots with their status."""
+    from nexora.database.runtime import SessionFactory
+    from nexora.database.models import Dot
+    with SessionFactory() as s:
+        q = s.query(Dot)
+        if enabled_only:
+            q = q.filter_by(enabled=True)
+        items = list(q.order_by(Dot.created_at.desc()))
+    if not items:
+        typer.echo("No Dots found. Create one with: nexora dots create")
+        return
+    for d in items:
+        state = "enabled" if d.enabled else "paused"
+        typer.echo(f"[{state}] {d.name} - {d.id}"
+                   + (f" | {d.mission}" if d.mission else ""))
+
+
+@dots.command("create")
+def dots_create(name: str = typer.Argument(..., help="Dot name"),
+                mission: str = typer.Option("", "--mission", "-m",
+                                             help="Dot mission")):
+    """Create a new Dot."""
+    import uuid
+    from nexora.database.runtime import SessionFactory
+    from nexora.database.models import Dot
+    with SessionFactory() as s:
+        d = Dot(id=uuid.uuid4().hex, name=name, mission=mission)
+        s.add(d)
+        s.commit()
+    typer.echo(f"Dot created: {name} ({d.id})")
+
+
+@dots.command("detail")
+def dots_detail(dot_id: str = typer.Argument(..., help="Dot ID")):
+    """Show one Dot: profile fields and its tasks."""
+    from nexora.database.runtime import SessionFactory
+    from nexora.database.models import Dot, Task
+    with SessionFactory() as s:
+        d = s.get(Dot, dot_id)
+        if d is None:
+            typer.secho("Dot not found: " + dot_id, fg=typer.colors.RED)
+            raise typer.Exit(1)
+        task_rows = list(s.query(Task).filter_by(dot_id=dot_id)
+                         .order_by(Task.created_at.desc()))
+    typer.echo(f"ID:          {d.id}")
+    typer.echo(f"Name:        {d.name}")
+    typer.echo(f"Mission:     {d.mission or '(none)'}")
+    typer.echo(f"Description: {d.description or '(none)'}")
+    typer.echo(f"Personality: {d.personality or '(none)'}")
+    typer.echo(f"Model:       {d.model or '(default)'}")
+    typer.echo(f"Status:      {d.status or '(none)'}")
+    typer.echo(f"Enabled:     {'yes' if d.enabled else 'no'}")
+    typer.echo(f"Workspace:   {d.workspace or '(none)'}")
+    typer.echo(f"Created:     {d.created_at}")
+    typer.echo(f"Tasks:       {len(task_rows)}")
+    for t in task_rows[:20]:
+        typer.echo(f"  [{t.status}] {t.goal[:80]} ({t.id})")
+
+
+@dots.command("toggle")
+def dots_toggle(dot_id: str = typer.Argument(..., help="Dot ID")):
+    """Toggle a Dot between enabled and paused."""
+    from nexora.database.runtime import SessionFactory
+    from nexora.database.models import Dot
+    with SessionFactory() as s:
+        d = s.get(Dot, dot_id)
+        if d is None:
+            typer.secho("Dot not found: " + dot_id, fg=typer.colors.RED)
+            raise typer.Exit(1)
+        d.enabled = not d.enabled
+        s.commit()
+        state = "enabled" if d.enabled else "paused"
+    typer.echo(f"Dot {state}: {d.name} ({dot_id})")
 
 
 def main():
