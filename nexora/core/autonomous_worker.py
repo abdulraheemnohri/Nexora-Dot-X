@@ -67,6 +67,7 @@ class AutonomousWorker:
             self.tasks.checkpoint(step.id, status="failed", error=str(exc))
             if attempts + 1 < self.limits.max_attempts:
                 self.tasks.set_status(task_id, TaskStatus.RETRYING.value, error=str(exc))
+                await self.enqueue(task_id, priority=task.priority or 1)
             else:
                 self.tasks.set_status(task_id, TaskStatus.FAILED.value, error=str(exc))
 
