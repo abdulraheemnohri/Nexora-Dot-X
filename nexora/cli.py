@@ -17,6 +17,8 @@ dots = typer.Typer(no_args_is_help=True)
 cli.add_typer(dots, name="dots")
 approvals = typer.Typer(no_args_is_help=True)
 cli.add_typer(approvals, name="approvals")
+memory = typer.Typer(no_args_is_help=True)
+cli.add_typer(memory, name="memory")
 
 DEFAULT_LITERT_MODEL = "litert-community/gemma-4-E2B-it-litert-lm"
 DEFAULT_LITERT_FILE = "gemma-4-E2B-it.litertlm"
@@ -756,6 +758,53 @@ def approvals_reject(approval_id: str = typer.Argument(..., help="Approval ID"))
         typer.secho("Approval not found: " + approval_id, fg=typer.colors.RED)
         raise typer.Exit(1)
     typer.echo(f"Rejected: {a.tool}:{a.action} ({approval_id})")
+
+@memory.command("search")
+def memory_search(query: str = typer.Argument(..., help="Search query"),
+                  limit: int = typer.Option(20, "--limit", "-l",
+                                           help="Max results")):
+    """Federated memory search (same results as the UI)."""
+    from nexora.core.memory_service import MemoryService
+    hits = MemoryService().search_detailed(query, limit=limit)
+    if not hits:
+        typer.echo("No memories found.")
+        return
+    for h in hits:
+        badge = ""
+        if h.get("kind"):
+            badge = " [" + str(h["kind"]) + "]"
+        if h.get("confidence") is not None:
+            badge += " conf " + str(h["confidence"])
+        typer.echo(str(h.get("content", "")) + badge)
+
+
+@memory.command("remember")
+def memory_remember(content: str = typer.Argument(..., help="Content to save"),
+                     kind: str = typer.Option("semantic", "--kind", "-k",
+                                              help="semantic | user | project | episodic"),
+                     importance: float = typer.Option(0.5, "--importance", "-i",
+                                                      help="Confidence 0.0-1.0")):
+    """Save a new memory."""
+    from nexora.core.memory_service import MemoryService
+    ok = MemoryService().remember(content, kind=kind,
+                                  importance=importance)
+    if not ok:
+        typer.secho("Empty content not saved.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.echo("Saved (" + kind + ").")
+
+
+@memory.command("forget")
+def memory_forget(query: str = typer.Argument(..., help="Search query"),
+                   confirm: bool = typer.Option(False, "--yes", "-y",
+                                                help="Skip the confirmation prompt")):
+    """Delete memories matching a search query (destructive)."""
+    from nexora.core.memory_service import MemoryService
+    if not confirm:
+        typer.confirm("Delete all memories matching '" + query
+                      + "'?", abort=True)
+    n = MemoryService().forget(query)
+    typer.echo(f"Deleted {n} memory(ies).")
 
 def main():
     cli()

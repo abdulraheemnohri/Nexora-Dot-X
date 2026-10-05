@@ -8,6 +8,17 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CHANGELOG.md started with full project history (V1 through V2.13).
 
+## [2.44] - 2026-10-05
+
+### Added
+- nexora memory CLI group (same federated memory as
+  the UI):
+  - nexora memory search <query> [--limit]
+  - nexora memory remember <content> [--kind]
+    [--importance]
+  - nexora memory forget <query> [--yes] (asks for
+    confirmation by default)
+
 ## [2.43] - 2026-10-05
 
 ### Added
