@@ -55,6 +55,7 @@ class AutonomousWorker:
                 self.tasks.set_status(task_id, TaskStatus.COMPLETED.value, result=str(result))
             else:
                 self.tasks.set_status(task_id, TaskStatus.QUEUED.value)
+                await self.enqueue(task_id, priority=task.priority or 1)
         except WaitingApproval as exc:
             self.tasks.set_status(task_id, TaskStatus.WAITING_APPROVAL.value, error=str(exc))
             self.tasks.checkpoint(step.id, status="pending", error=str(exc))
