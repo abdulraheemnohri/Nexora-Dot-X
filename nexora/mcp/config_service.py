@@ -23,7 +23,7 @@ class MCPConfigService:
         existing = repo.get_by_id(MCPServerConfig, server_id)
         if existing is None:
             return False
-        repo.delete_obj(existing)
+        repo.delete_by_id(MCPServerConfig, server_id)
         return True
 
     def to_server(self, row):
