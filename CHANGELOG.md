@@ -3,6 +3,16 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.49] - 2026-10-05
+
+### Fixed
+- Tasks page: the status filter now survives live
+  polling. Filter links reload /tasks with a
+  ?status= query parameter, the active filter is
+  highlighted, and the 5-second auto-refresh keeps
+  the filtered view instead of resetting to all
+  tasks.
+
 ## [2.48] - 2026-10-05
 
 ### Changed

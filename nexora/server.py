@@ -765,25 +765,25 @@ def create_app():
 
     # ---- tasks --------------------------------------------------------------
 
-    def _task_filter_links():
+    def _task_filter_links(current: str = ""):
+        def _link(label, value):
+            href = "/tasks" + (("?status=" + value) if value else "")
+            shown = "[" + label + "]" if value == current else label
+            return A(shown, href=href)
+
         return Div(
-            A("All", hx_get="/api/tasks/rows",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("All", ""),
             " · ",
-            A("RUNNING", hx_get="/api/tasks/rows?status=RUNNING",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("RUNNING", "RUNNING"),
             " · ",
-            A("COMPLETED", hx_get="/api/tasks/rows?status=COMPLETED",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("COMPLETED", "COMPLETED"),
             " · ",
-            A("FAILED", hx_get="/api/tasks/rows?status=FAILED",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("FAILED", "FAILED"),
             " · ",
-            A("CANCELLED", hx_get="/api/tasks/rows?status=CANCELLED",
-              hx_target="#tasks-live", hx_swap="innerHTML"))
+            _link("CANCELLED", "CANCELLED"))
 
     @rt("/tasks")
-    def task_page():
+    def task_page(status: str = ""):
         return Titled("Tasks", H1("Tasks"),
                       Form(Input(name="dot_id", placeholder="Dot ID",
                                  required=True),
@@ -792,10 +792,11 @@ def create_app():
                            Button("Queue task"), action="/api/tasks",
                            method="post"),
                       H2("Filter"),
-                      _task_filter_links(),
+                      _task_filter_links(status),
                       H2("Tasks"),
                       Div(id="tasks-live",
-                          hx_get="/api/tasks/rows",
+                          hx_get="/api/tasks/rows"
+                          + (("?status=" + status) if status else ""),
                           hx_trigger="load, every 5s",
                           hx_swap="innerHTML"),
                       Div(id="tasks-result"))
