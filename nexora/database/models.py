@@ -117,6 +117,7 @@ class Approval(Base):
     id = Column(String, primary_key=True, default=uid)
     tool = Column(String, nullable=False)
     action = Column(Text, nullable=False)
+    arguments_json = Column(Text, nullable=True)
     reason = Column(Text, default="")
     risk = Column(String, default="medium")
     task_id = Column(String, ForeignKey("tasks.id"), nullable=True)
