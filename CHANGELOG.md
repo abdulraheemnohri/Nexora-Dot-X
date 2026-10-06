@@ -3,6 +3,22 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.54] - 2026-10-06
+
+### Added
+- Audit log viewer page (/audit) with a nav link on the
+  home page: the last 100 sensitive operations with time,
+  actor, tool, action, decision and outcome.
+- Skills detail view: inline file previews. The first three
+  text files (up to 4KB each) inside a skill directory are
+  shown in collapsible previews, escaped for safety.
+- Settings page: task worker section showing processing
+  state (running/PAUSED) and max workers, with a
+  pause/resume button (/api/worker/toggle) that is itself
+  audited. While paused, new tasks stay QUEUED.
+- Home status card: live task counts (running, queued,
+  completed, failed).
+
 ## [2.53] - 2026-10-06
 
 ### Added

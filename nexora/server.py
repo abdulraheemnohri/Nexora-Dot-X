@@ -80,6 +80,7 @@ MEMORY_PAGE_SIZE = 20
 def create_app():
     app, rt = fast_app()
     tasks = TaskEngine()
+    worker_state = {"paused": False}
     planner = Planner()
     approvals = ApprovalCenter()
     chat = ChatService()
@@ -104,6 +105,7 @@ def create_app():
                             + ((" (" + str(pending_approvals) + ")")
                                if pending_approvals else ""),
                             href="/approvals"), " · ",
+                          A("Audit", href="/audit"), " · ",
                           A("Settings", href="/settings")),
                       H2("Live status"),
                       Div(id="status-live",
@@ -151,7 +153,15 @@ def create_app():
             "<p>Pending approvals: " + str(len(approvals.pending()))
             + " · Always-allow grants: "
             + str(len(grants_store.list_grants()))
-            + " · Pending skills: " + str(len(skills.pending())) + "</p>")
+            + " · Pending skills: " + str(len(skills.pending())) + "</p>"
+            + "<p>Tasks: running "
+            + str(len(tasks.list(status="RUNNING")))
+            + " · queued "
+            + str(len(tasks.list(status="QUEUED")))
+            + " · completed "
+            + str(len(tasks.list(status="COMPLETED")))
+            + " · failed "
+            + str(len(tasks.list(status="FAILED"))) + "</p>")
         with SessionFactory() as s:
             dots = list(s.query(Dot).order_by(Dot.created_at.desc()))
         if dots:
@@ -669,6 +679,7 @@ def create_app():
                      "<ul>" + items + "</ul>")
         skill_dir = s.get("_dir") or ""
         files = ""
+        preview_files = []
         if skill_dir:
             from pathlib import Path
             d = Path(skill_dir)
@@ -679,8 +690,24 @@ def create_app():
                         files += ("<li>"
                                   + f.relative_to(d).as_posix()
                                   + " (" + str(size) + " bytes)</li>")
+                        if len(preview_files) < 3 and size <= 4096:
+                            try:
+                                text = f.read_text(
+                                    encoding="utf-8",
+                                    errors="replace")
+                                preview_files.append(
+                                    (f.relative_to(d).as_posix(),
+                                     text))
+                            except OSError:
+                                pass
         if files:
             html += "<h4>Files</h4><ul>" + files + "</ul>"
+        for fname, text in preview_files:
+            html += ("<details><summary>Preview: "
+                     + fname.replace("<", "&lt;")
+                     + "</summary><pre>"
+                     + text[:1500].replace("<", "&lt;")
+                     + "</pre></details>")
         return raw(html)
 
     @rt("/api/skills/run", methods=["POST"])
@@ -974,6 +1001,10 @@ def create_app():
 
     async def runtime_submit(dot_id, goal):
         task = tasks.create(goal, dot_id=dot_id)
+        if worker_state["paused"]:
+            tasks.set_status(task.id, "QUEUED",
+                             "Task processing is paused")
+            return task
         plan = planner.plan(goal)
         if not plan:
             tasks.set_status(task.id, "FAILED",
@@ -1106,8 +1137,63 @@ def create_app():
                       P("Auth enabled: " + str(settings.auth_enabled)),
                       P("Host: " + str(settings.host) + ":"
                         + str(settings.port)),
+                      H2("Task worker"),
+                      P("Task processing: "
+                        + ("PAUSED" if worker_state["paused"]
+                           else "running")),
+                      P("Max workers: "
+                        + str(get_profile().max_workers)),
+                      Form(Button(("Resume task processing"
+                                   if worker_state["paused"]
+                                   else "Pause task processing")),
+                           action="/api/worker/toggle",
+                           method="post"),
                       Form(Button("Logout"), action="/auth/logout",
                            method="post"))
+
+    @rt("/audit")
+    def audit_page():
+        """Audit log viewer (System 1 transparency)."""
+        from nexora.control.audit import tail as audit_tail
+        entries = audit_tail(100)
+        rows = ""
+        for e in entries:
+            rows += ("<tr><td>"
+                     + str(e.created_at).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.actor).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.tool).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.action).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.decision).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.outcome).replace("<", "&lt;")
+                     + "</td></tr>")
+        if not rows:
+            rows = ("<tr><td colspan='6'>No audit entries yet."
+                    "</td></tr>")
+        return Titled("Audit", H1("Audit log"),
+                      P("Last 100 sensitive operations "
+                        + "(newest first)."),
+                      raw("<table><tr><th>Time</th><th>Actor</th>"
+                          + "<th>Tool</th><th>Action</th>"
+                          + "<th>Decision</th><th>Outcome</th>"
+                          + "</tr>" + rows + "</table>"))
+
+    @rt("/api/worker/toggle", methods=["POST"])
+    def worker_toggle():
+        """Pause or resume task processing (System 1 switch)."""
+        from nexora.control.audit import audit
+        worker_state["paused"] = not worker_state["paused"]
+        audit("user", tool="worker", action="toggle",
+              decision=("PAUSE" if worker_state["paused"]
+                        else "RESUME"),
+              outcome=("task processing paused"
+                       if worker_state["paused"]
+                       else "task processing resumed"))
+        return RedirectResponse("/settings", status_code=303)
 
     app = AuthMiddleware(app)
     return app
