@@ -9,6 +9,7 @@ from nexora.control.audit import audit
 from nexora.core.events import bus
 from nexora.database import repositories as repo
 from nexora.database.models import Approval
+import json
 
 
 class StepOutcome:
@@ -30,7 +31,9 @@ class Executor:
 
     async def execute_async(self, step: dict, *, bot_id=None, task_id=None, step_id=None, dry_run=False) -> StepOutcome:
         tool = step.get("tool") or step.get("kind", "work")
-        action = step.get("action") or step.get("description", "")
+        arguments = step.get("arguments") if isinstance(step.get("arguments"), dict) else None
+        action = step.get("action") or step.get("description", "") or (json.dumps(arguments, sort_keys=True) if arguments is not None else "")
+        dispatch_action = arguments if arguments is not None else action
         decision = self.policy.evaluate(tool, action, dry_run=dry_run)
         audit(
             "agent", bot_id=bot_id, task_id=task_id, tool=tool,
@@ -42,7 +45,7 @@ class Executor:
         if decision.decision is Decision.ASK:
             a = self.approvals.request(
                 tool, action, decision.reason, decision.risk.value,
-                task_id=task_id, step_id=step_id
+                task_id=task_id, step_id=step_id, arguments=arguments
             )
             bus.publish(
                 "approval.requested",
@@ -61,7 +64,7 @@ class Executor:
                 f"step '{step.get('kind', tool)}' completed "
                 "(no tool side effects configured)",
             )
-        result = await self.tools.run_async(tool, action)
+        result = await self.tools.run_async(tool, dispatch_action)
         return StepOutcome(
             result.get("ok", True), result.get("output", "")
         )
