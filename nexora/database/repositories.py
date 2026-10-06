@@ -1,6 +1,6 @@
 """Repository pattern helpers over the SQLAlchemy session factory."""
 from typing import Any, Iterable
-from sqlalchemy import select
+from sqlalchemy import select, update
 from nexora.database.engine import get_session_factory
 
 
@@ -37,6 +37,23 @@ def update_fields(obj: Any, **fields) -> Any:
         s.commit()
         s.refresh(o)
         return o
+
+
+def claim_approval(approval_model: type, approval_id: str):
+    """Atomically claim an approved approval for one execution attempt."""
+    with _session() as s:
+        result = s.execute(
+            update(approval_model)
+            .where(
+                approval_model.id == approval_id,
+                approval_model.status == "approved",
+            )
+            .values(status="executing")
+        )
+        if result.rowcount != 1:
+            return None
+        s.commit()
+        return s.get(approval_model, approval_id)
 
 
 def delete_by_id(model: type, id_: str) -> bool:

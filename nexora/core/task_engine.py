@@ -68,3 +68,50 @@ class TaskEngine:
             return json.loads(t.plan)
         except json.JSONDecodeError:
             return []
+
+    def initialize_steps(self, task_id: str, steps: list) -> list:
+        from nexora.database.models import TaskStep
+        existing = self.steps(task_id)
+        if existing:
+            return existing
+        return [repo.add_obj(TaskStep(task_id=task_id, step_index=i, description=str(s)))
+                for i, s in enumerate(steps)]
+
+    def steps(self, task_id: str) -> list:
+        from nexora.database.models import TaskStep
+        return repo.query(TaskStep, TaskStep.task_id == task_id, limit=10000)
+
+    def checkpoint(self, step_id: str, *, status: str | None = None,
+                   output: str | None = None, error: str | None = None,
+                   checkpoint: dict | None = None, attempts: int | None = None):
+        from nexora.database.models import TaskStep
+        import time
+        step = repo.get_by_id(TaskStep, step_id)
+        if step is None:
+            return None
+        values = {}
+        if status is not None:
+            values["status"] = status
+            if status == "running" and step.started_at is None:
+                values["started_at"] = time.time()
+            if status in {"completed", "failed", "cancelled"}:
+                values["completed_at"] = time.time()
+        if output is not None:
+            values["output"] = output
+        if error is not None:
+            values["error"] = error
+        if checkpoint is not None:
+            values["checkpoint_json"] = json.dumps(checkpoint, ensure_ascii=False)
+        if attempts is not None:
+            values["attempts"] = attempts
+        return repo.update_fields(step, **values) if values else step
+
+    def next_resumable_step(self, task_id: str):
+        steps = sorted(self.steps(task_id), key=lambda s: s.step_index)
+        return next((s for s in steps if s.status not in {"completed", "cancelled"}), None)
+
+    def resume(self, task_id: str) -> Task | None:
+        t = self.get(task_id)
+        if t is None or t.status in {TaskStatus.COMPLETED.value, TaskStatus.CANCELLED.value}:
+            return t
+        return self.set_status(task_id, TaskStatus.RUNNING.value)

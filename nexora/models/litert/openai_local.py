@@ -63,8 +63,8 @@ class LiteRTServeProvider(ModelProvider):
         self.model = ""
 
     def generate(self, prompt: str, *, temperature: float = 0.7,
-                 max_tokens: int = 512) -> str:
-        if not self._allowed():
+                 max_tokens: int = 512, system_prompt: str | None = None) -> str:
+        if system_prompt:\n            prompt = system_prompt + "\\n\\n" + prompt\n        if not self._allowed():
             raise RuntimeError(
                 "litert-serve disabled: non-loopback URL in local-only mode")
         r = self._http().post(

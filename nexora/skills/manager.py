@@ -62,6 +62,9 @@ class SkillManager:
         target.mkdir(parents=True, exist_ok=True)
         meta = dict(meta)
         meta["name"] = name
+        validation = validate_metadata(meta)
+        if not validation["ok"]:
+            return {"ok": False, "error": "; ".join(validation["issues"])}
         (target / "skill.json").write_text(
             json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         for rel, content in (files or {}).items():
@@ -75,6 +78,13 @@ class SkillManager:
         src = self.pending_dir / name
         if not src.exists():
             return {"ok": False, "error": "no pending skill: " + name}
+        try:
+            meta = json.loads((src / "skill.json").read_text(encoding="utf-8"))
+        except Exception as exc:
+            return {"ok": False, "error": "invalid skill.json: " + str(exc)}
+        scan = scan_skill_files({**meta, "_dir": str(src)})
+        if not scan["ok"]:
+            return {"ok": False, "error": "static scan failed: " + "; ".join(scan["issues"])}
         target = self.dir / name
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():

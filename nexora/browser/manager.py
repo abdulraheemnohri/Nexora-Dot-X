@@ -1,72 +1,104 @@
-"""Browser automation via Playwright (optional dependency).
+"""Async Playwright browser control.
 
-Every action is still routed through System 1 policy by the executor.
+Browser sessions are process-local and are exposed only through System 1.
+Domain allowlisting is enforced before navigation.
 """
-from nexora.control.policy import PolicyEngine, Decision
+from dataclasses import dataclass, field
+from urllib.parse import urlparse
 from nexora.control.audit import audit
 
 
+@dataclass
+class BrowserPolicy:
+    allowed_domains: list[str] = field(default_factory=list)
+
+    def allows(self, url: str) -> bool:
+        host = (urlparse(url).hostname or "").lower().rstrip(".")
+        return any(host == d.lower().lstrip("*.").rstrip(".") or
+                   host.endswith("." + d.lower().lstrip("*.").rstrip("."))
+                   for d in self.allowed_domains)
+
+
+@dataclass
+class BrowserSession:
+    session_id: str
+    headless: bool = True
+    page: object | None = None
+
+
 class BrowserManager:
-    def __init__(self):
-        self.policy = PolicyEngine()
-        self._pw = None
+    def __init__(self, policy: BrowserPolicy | None = None):
+        self.policy = policy or BrowserPolicy([])
+        self._playwright = None
         self._browser = None
-        self._page = None
+        self._sessions: dict[str, BrowserSession] = {}
 
     def available(self) -> bool:
         try:
-            import playwright  # noqa: F401
+            import playwright.async_api  # noqa: F401
             return True
         except ImportError:
             return False
 
-    def _ensure(self, headless: bool = True):
-        if self._page is not None:
-            return self._page
-        from playwright.sync_api import sync_playwright
-        self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(headless=headless)
-        self._page = self._browser.new_page()
-        return self._page
+    async def _ensure_runtime(self):
+        if self._playwright is None:
+            from playwright.async_api import async_playwright
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(headless=True)
 
-    def run(self, action: str) -> dict:
-        decision = self.policy.evaluate("browser", action)
-        audit("agent", tool="browser", action=action,
-              decision=decision.decision.value, outcome=decision.reason)
-        if decision.decision is Decision.BLOCK:
-            return {"ok": False, "output": f"BLOCKED: {decision.reason}"}
-        if decision.decision is Decision.ASK:
-            return {"ok": False, "output": "APPROVAL_REQUIRED", "approval_needed": True}
+    async def create(self, session_id: str, headless: bool = True) -> BrowserSession:
+        if not session_id.strip():
+            raise ValueError("session_id cannot be empty")
+        if session_id in self._sessions:
+            return self._sessions[session_id]
         if not self.available():
-            return {"ok": False,
-                    "output": "Playwright not installed: pip install nexora-dot-x[browser] && playwright install chromium"}
-        try:
-            page = self._ensure()
-            op, _, arg = action.partition("|")
-            op = op.strip().lower()
-            if op == "goto":
-                page.goto(arg.strip())
-                return {"ok": True, "output": page.title()}
-            if op == "text":
-                return {"ok": True, "output": page.inner_text("body")[:20000]}
-            if op == "screenshot":
-                path = arg.strip() or "screenshot.png"
-                page.screenshot(path=path)
-                return {"ok": True, "output": f"saved {path}"}
-            if op == "click":
-                page.click(arg.strip())
-                return {"ok": True, "output": "clicked"}
-            if op == "type":
-                sel, _, text = arg.partition("|")
-                page.fill(sel.strip(), text)
-                return {"ok": True, "output": "typed"}
-            return {"ok": False, "output": f"unsupported browser op: {op}"}
-        except Exception as e:
-            return {"ok": False, "output": f"browser error: {e}"}
+            raise RuntimeError("Playwright not installed; install the browser extra and Chromium")
+        from playwright.async_api import async_playwright
+        if self._playwright is None:
+            self._playwright = await async_playwright().start()
+        self._browser = self._browser or await self._playwright.chromium.launch(headless=headless)
+        page = await self._browser.new_page()
+        session = BrowserSession(session_id, headless, page)
+        self._sessions[session_id] = session
+        return session
 
-    def close(self):
+    def _get(self, session_id: str):
+        session = self._sessions.get(session_id)
+        if session is None or session.page is None:
+            raise ValueError("browser session not found")
+        return session
+
+    async def navigate(self, session_id: str, url: str):
+        if not self.policy.allows(url):
+            audit("agent", tool="browser.navigate", action=url, decision="BLOCK", outcome="domain not allowlisted")
+            return {"ok": False, "output": "BLOCKED: domain is not allowlisted"}
+        session = self._get(session_id)
+        await session.page.goto(url, wait_until="domcontentloaded")
+        return {"ok": True, "output": await session.page.title()}
+
+    async def screenshot(self, session_id: str, path: str):
+        session = self._get(session_id)
+        await session.page.screenshot(path=path)
+        return {"ok": True, "output": f"saved {path}"}
+
+    async def content(self, session_id: str):
+        session = self._get(session_id)
+        return {"ok": True, "output": (await session.page.content())[:20000]}
+
+    async def close(self, session_id: str):
+        session = self._get(session_id)
+        await session.page.close()
+        self._sessions.pop(session_id, None)
+        return {"ok": True, "output": "closed"}
+
+    async def close_all(self):
+        for session_id in list(self._sessions):
+            try:
+                await self.close(session_id)
+            except Exception:
+                pass
         if self._browser:
-            self._browser.close()
-        if self._pw:
-            self._pw.stop()
-        self._browser = self._page = self._pw = None
+            await self._browser.close()
+        if self._playwright:
+            await self._playwright.stop()
+        self._browser = self._playwright = None

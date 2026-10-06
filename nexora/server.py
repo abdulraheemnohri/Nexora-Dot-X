@@ -1,4 +1,5 @@
 from time import time
+import asyncio
 
 from fasthtml.common import *
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -7,17 +8,27 @@ from starlette.datastructures import UploadFile
 from nexora import __version__
 from nexora.config import settings
 from nexora.database.runtime import SessionFactory
-from nexora.database.models import Dot, Task
+from nexora.database.models import Dot, Task, TaskStep, Approval
 from nexora.core.task_engine import TaskEngine
 from nexora.core.planner import Planner
 from nexora.core.chat_service import ChatService
 from nexora.core.memory_service import MemoryService
 from nexora.core.model_service import ModelService
+from nexora.core.worker_runtime import WorkerRuntime
+from nexora.core.autonomous_worker import AutonomousWorker, WorkerLimits
+from nexora.core.task_step_runner import TaskStepRunner
+from nexora.core.executor import Executor
+from nexora.tools.runtime import build_registry
 from nexora.core.profiles import PROFILES, get_profile
+from nexora.channels.gateway import Gateway
+from nexora.mcp.config_service import MCPConfigService
+from nexora.mcp.gateway import MCPGateway
+from nexora.mcp.runtime import MCPProcessConfig
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
+from nexora.database import repositories as repo
 from nexora.security.auth import AuthManager
-from nexora.security.middleware import COOKIE, AuthMiddleware
+from nexora.security.middleware import COOKIE, AuthMiddleware, websocket_authenticated
 from nexora.skills.manager import SkillManager
 from nexora.skills.runtime import run_skill
 from nexora.skills.scanner import scan_skill_files
@@ -88,6 +99,25 @@ def create_app():
     models = ModelService()
     auth = AuthManager()
     skills = SkillManager()
+    profile = get_profile()
+    worker_runtime = WorkerRuntime(AutonomousWorker(tasks, WorkerLimits(max_concurrent=profile.max_workers)))
+    tool_registry = build_registry()
+    step_runner = TaskStepRunner(Executor(tool_registry))
+    mcp_config = MCPConfigService()
+    mcp_gateway = MCPGateway(registry=tool_registry)
+    channel_gateway = Gateway(tasks=tasks)
+
+    async def _worker_executor(step):
+        return await step_runner(step)
+
+    async def _start_worker():
+        await worker_runtime.start(_worker_executor)
+
+    async def _stop_worker():
+        await worker_runtime.stop()
+
+    app.add_event_handler("startup", _start_worker)
+    app.add_event_handler("shutdown", _stop_worker)
 
     @rt("/")
     def home():
@@ -101,6 +131,8 @@ def create_app():
                           A("Models", href="/models"), " · ",
                           A("Skills", href="/skills"), " · ",
                           A("Tasks", href="/tasks"), " · ",
+                          A("Worker", href="/worker"), " · ",
+                          A("MCP", href="/mcp"), " · ",
                           A("Approvals"
                             + ((" (" + str(pending_approvals) + ")")
                                if pending_approvals else ""),
@@ -129,7 +161,8 @@ def create_app():
                            for m in models.status()],
                 "pending_approvals": len(approvals.pending()),
                 "always_allow_grants": len(grants_store.list_grants()),
-                "pending_skills": len(skills.pending())}
+                "pending_skills": len(skills.pending()),
+                "worker_running": worker_runtime.running}
 
     @rt("/api/status/card")
     def status_card():
@@ -153,15 +186,13 @@ def create_app():
             "<p>Pending approvals: " + str(len(approvals.pending()))
             + " · Always-allow grants: "
             + str(len(grants_store.list_grants()))
-            + " · Pending skills: " + str(len(skills.pending())) + "</p>"
+            + " · Pending skills: " + str(len(skills.pending())) + " · Worker: "
+            + ("running" if worker_runtime.running else "stopped") + "</p>"
             + "<p>Tasks: running "
             + str(len(tasks.list(status="RUNNING")))
-            + " · queued "
-            + str(len(tasks.list(status="QUEUED")))
-            + " · completed "
-            + str(len(tasks.list(status="COMPLETED")))
-            + " · failed "
-            + str(len(tasks.list(status="FAILED"))) + "</p>")
+            + " · queued " + str(len(tasks.list(status="QUEUED")))
+            + " · completed " + str(len(tasks.list(status="COMPLETED")))
+            + " · failed " + str(len(tasks.list(status="FAILED"))) + "</p>")
         with SessionFactory() as s:
             dots = list(s.query(Dot).order_by(Dot.created_at.desc()))
         if dots:
@@ -176,7 +207,7 @@ def create_app():
                     + '<input type="hidden" name="dot_id" value="'
                     + str(d.id) + '">'
                     + "<button>" + label + "</button></form></li>")
-            html += ("<h3>Dots</h3><ul>" + dot_html + "</ul>")
+            html += "<h3>Dots</h3><ul>" + dot_html + "</ul>"
         if rows:
             html += ("<table><tr><th>Backend</th><th>Status</th>"
                      "<th>Model</th></tr>" + rows + "</table>")
@@ -233,6 +264,9 @@ def create_app():
 
     @app.websocket("/ws/chat")
     async def ws_chat(ws: WebSocket):
+        if not websocket_authenticated(ws):
+            await ws.close(code=1008, reason="unauthorized")
+            return
         await ws.accept()
         dot_id = ws.query_params.get("dot_id") or ""
         try:
@@ -1007,16 +1041,48 @@ def create_app():
             return task
         plan = planner.plan(goal)
         if not plan:
-            tasks.set_status(task.id, "FAILED",
-                             "Planner returned no steps")
+            tasks.set_status(task.id, "FAILED", "Planner returned no steps")
             return task
         tasks.set_plan(task.id, plan)
-        tasks.set_status(task.id, "PLANNING")
-        tasks.set_status(task.id, "RUNNING")
-        tasks.set_status(task.id, "COMPLETED",
-                         "Plan created; awaiting configured "
-                         "model/tool execution.")
+        tasks.initialize_steps(task.id, plan)
+        tasks.set_status(task.id, "QUEUED")
+        await worker_runtime.worker.enqueue(task.id, priority=task.priority or 1)
         return task
+
+    channel_gateway.submit = runtime_submit
+
+    async def _resume_approved_task(approval_id: str):
+        """Execute an approved step and requeue its durable task."""
+        approval = repo.get_by_id(Approval, approval_id)
+        if approval is None:
+            return None, "Approval not found"
+        if not approval.task_id or not approval.step_id:
+            return None, "Approval is not linked to a task step"
+        outcome = await step_runner.executor.resume_async(approval_id)
+        step = repo.get_by_id(TaskStep, approval.step_id)
+        if step is None:
+            return outcome, "Linked task step not found"
+        if outcome.ok:
+            tasks.checkpoint(step.id, status="completed", output=outcome.output)
+            task = tasks.get(approval.task_id)
+            if task is None:
+                return outcome, "Linked task not found"
+            if tasks.next_resumable_step(task.id) is None:
+                tasks.set_status(task.id, "COMPLETED", result=outcome.output)
+            else:
+                tasks.set_status(task.id, "QUEUED")
+                await worker_runtime.worker.enqueue(task.id, priority=task.priority or 1)
+            return outcome, ""
+        tasks.checkpoint(step.id, status="failed", error=outcome.output)
+        tasks.set_status(approval.task_id, "FAILED", error=outcome.output)
+        return outcome, outcome.output
+
+    @rt("/api/channels/webhook/{channel_name}", methods=["POST"])
+    async def channel_webhook(channel_name: str, text: str = "", dot_id: str = "", sender: str = ""):
+        """Generic local webhook ingress; external adapters should verify signatures upstream."""
+        return await channel_gateway.route_async(
+            channel_name, {"text": text, "dot_id": dot_id or None, "sender": sender}
+        )
 
     # ---- approvals ---------------------------------------------------------
 
@@ -1083,13 +1149,17 @@ def create_app():
         return raw("".join(cards))
 
     @rt("/api/approvals/{approval_id}/approve", methods=["POST"])
-    def approve(approval_id: str):
-        approvals.decide(approval_id, True)
+    async def approve(approval_id: str):
+        approved = approvals.decide(approval_id, True)
+        if approved is not None:
+            await _resume_approved_task(approval_id)
         return RedirectResponse("/approvals", status_code=303)
 
     @rt("/api/approvals/{approval_id}/always", methods=["POST"])
-    def always_allow(approval_id: str):
-        approvals.decide(approval_id, True, always=True)
+    async def always_allow(approval_id: str):
+        approved = approvals.decide(approval_id, True, always=True)
+        if approved is not None:
+            await _resume_approved_task(approval_id)
         return RedirectResponse("/approvals", status_code=303)
 
     @rt("/api/approvals/{approval_id}/reject", methods=["POST"])
@@ -1112,6 +1182,84 @@ def create_app():
                  + action.replace("<", "&lt;") + ". "
                  "Future requests will ask again.",
                  style="color:#4a4")
+
+    @rt("/worker")
+    def worker_page():
+        w = worker_runtime.worker
+        active = sorted(w._active)
+        queued = list(w._queued)
+        return Titled("Worker", H1("Autonomous Worker"),
+                      P("State: " + ("running" if worker_runtime.running else "stopped")),
+                      P("Max concurrent: " + str(w.limits.max_concurrent)
+                        + " · Max attempts: " + str(w.limits.max_attempts)
+                        + " · Step timeout: " + str(w.limits.step_timeout) + "s"),
+                      H2("Active"), Ul(*(Li(x) for x in active)) if active else P("None"),
+                      H2("Queued"), Ul(*(Li(x) for x in queued)) if queued else P("None"),
+                      Form(Button("Refresh"), hx_get="/api/worker/status",
+                           hx_target="#worker-status", hx_swap="innerHTML"),
+                      Div(id="worker-status"))
+
+    @rt("/api/worker/status")
+    def worker_status():
+        w = worker_runtime.worker
+        return Div(P("Running: " + str(worker_runtime.running)),
+                   P("Active: " + str(len(w._active))),
+                   P("Queued: " + str(len(w._queued))),
+                   P("Cancelled: " + str(len(w._cancelled))))
+
+    @rt("/mcp")
+    def mcp_page():
+        rows = []
+        for s in mcp_config.list():
+            rows.append(Tr(Td(str(s.id)), Td(str(s.name)),
+                           Td("enabled" if s.enabled else "disabled"),
+                           Td("trusted" if s.trusted else "approval required"),
+                           Td(", ".join(__import__("json").loads(s.allowed_tools_json or "[]"))),
+                           Td(Form(Button("Connect"), method="post",
+                                   action="/api/mcp/connect/" + str(s.id)),
+                               Form(Button("Disconnect"), method="post",
+                                    action="/api/mcp/disconnect/" + str(s.id)))))
+        return Titled("MCP", H1("MCP Gateway"),
+                      P("Persistent MCP configuration. Untrusted tools remain subject to System 1 approval."),
+                      Form(Input(name="server_id", placeholder="server id", required=True),
+                           Input(name="name", placeholder="display name", required=True),
+                           Input(name="command", placeholder="stdio command, space separated", required=True),
+                           Input(name="cwd", placeholder="working directory"),
+                           Label(Input(name="enabled", type="checkbox"), " Enabled"),
+                           Label(Input(name="trusted", type="checkbox"), " Trusted"),
+                           Button("Save MCP server"), method="post", action="/api/mcp/save"),
+                      Table(Thead(Th("ID"), Th("Name"), Th("State"), Th("Trust"), Th("Tools"), Th("Actions")),
+                            *rows) if rows else P("No MCP servers configured."))
+
+    @rt("/api/mcp/connect/{server_id}", methods=["POST"])
+    async def mcp_connect(server_id: str):
+        import json
+        row = next((x for x in mcp_config.list() if x.id == server_id), None)
+        if row is None:
+            return RedirectResponse("/mcp?error=not-found", status_code=303)
+        mcp_gateway.register_server(mcp_config.to_server(row))
+        try:
+            await mcp_gateway.connect_stdio(server_id, MCPProcessConfig(
+                command=json.loads(row.command_json or "[]"), cwd=row.cwd or None))
+        except Exception:
+            return RedirectResponse("/mcp?error=connect", status_code=303)
+        return RedirectResponse("/mcp", status_code=303)
+
+    @rt("/api/mcp/disconnect/{server_id}", methods=["POST"])
+    async def mcp_disconnect(server_id: str):
+        try:
+            await mcp_gateway.disconnect(server_id)
+        except Exception:
+            pass
+        return RedirectResponse("/mcp", status_code=303)
+
+    @rt("/api/mcp/save", methods=["POST"])
+    def mcp_save(server_id: str, name: str, command: str, cwd: str = "",
+                 enabled: bool = False, trusted: bool = False):
+        import shlex
+        mcp_config.save(server_id.strip(), name.strip(), shlex.split(command),
+                        cwd.strip(), enabled, trusted)
+        return RedirectResponse("/mcp", status_code=303)
 
     @rt("/settings")
     def settings_page():

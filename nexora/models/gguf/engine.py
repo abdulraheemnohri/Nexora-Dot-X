@@ -45,8 +45,8 @@ class GGUFProvider(ModelProvider):
         self._model = None
 
     def generate(self, prompt: str, *, temperature: float = 0.7,
-                 max_tokens: int = 512) -> str:
-        if self._model is None:
+                 max_tokens: int = 512, system_prompt: str | None = None) -> str:
+        if system_prompt:\n            prompt = system_prompt + "\\n\\n" + prompt\n        if self._model is None:
             raise RuntimeError("GGUF: no model loaded")
         if isinstance(self._model, str):  # llama.cpp server mode
             import httpx
