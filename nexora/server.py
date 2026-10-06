@@ -826,6 +826,17 @@ def create_app():
 
     @rt("/tasks")
     def task_page(status: str = "", dot: str = ""):
+        with SessionFactory() as s:
+            all_dots = list(s.query(Dot).order_by(
+                Dot.created_at.desc()))
+        dot_options = '<option value="">All dots</option>'
+        for d in all_dots:
+            selected = (" selected" if str(d.id) == (dot or "")
+                        else "")
+            dot_options += ('<option value="' + str(d.id) + '"'
+                            + selected + ">"
+                            + str(d.name).replace("<", "&lt;")
+                            + " (id " + str(d.id) + ")</option>")
         return Titled("Tasks", H1("Tasks"),
                       Form(Input(name="dot_id", placeholder="Dot ID",
                                  required=True),
@@ -835,6 +846,12 @@ def create_app():
                            method="post"),
                       H2("Filter"),
                       _task_filter_links(status, dot),
+                      raw('<form method="get" action="/tasks">'
+                          + '<input type="hidden" name="status" value="'
+                          + str(status or "") + '">'
+                          + '<select name="dot">' + dot_options
+                          + '</select>'
+                          + '<button>Filter by dot</button></form>'),
                       H2("Tasks"),
                       Div(id="tasks-live",
                           hx_get="/api/tasks/rows"

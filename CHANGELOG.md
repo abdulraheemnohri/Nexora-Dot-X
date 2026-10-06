@@ -3,6 +3,14 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.53] - 2026-10-06
+
+### Added
+- Tasks page: dot filter dropdown listing every dot, so
+  tasks can be filtered by dot without knowing the Dot ID.
+  The currently active dot is pre-selected and the status
+  filter is preserved when switching dots.
+
 ## [2.52] - 2026-10-06
 
 ### Added
