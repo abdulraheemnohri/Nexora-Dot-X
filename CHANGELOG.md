@@ -3,6 +3,22 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.55] - 2026-10-06
+
+### Added
+- Interactive TUI dashboard (`nexora tui`): System 1/2 status header,
+  Dots, Tasks, Models and Approvals panels, watch mode (auto-refresh)
+  and command mode (:help, :status, :quit).
+- FunctionGemma action layer (`nexora.models.functiongemma`): parses
+  model output (JSON blocks, <tool=..> tags, TOOL:/ACTION: lines) into
+  ActionProposal objects and evaluates every proposal through the
+  System 1 policy engine - the model proposes, System 1 disposes.
+- New channel adapters: verified Webhook channel (HMAC-SHA256 signature
+  + 300s replay window), Signal and Microsoft Teams (both opt-in via
+  NEXORA_SECRET_* environment variables).
+- Tests: tests/test_functiongemma.py, tests/test_channels_extra.py,
+  tests/test_tui_smoke.py.
+
 ## [2.54] - 2026-10-06
 
 ### Added
@@ -55,7 +71,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Home dashboard: live status card now lists every Dot
   with its state and an inline Pause/Resume button,
-  so Dots can be controlled straight from the home
+  so Dots can be controlled straight from the
+ home
   page.
 - Memory page: live search results are paginated (20
   per page) with numbered page links.
@@ -127,7 +144,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ## [2.43] - 2026-10-05
 
 ### Added
-- Dot detail page: the task list is now live - it polls
+- Dot detail 
+page: the task list is now live - it polls
   every 5 seconds via GET /api/dots/{dot_id}/tasks/rows,
   so queued tasks appear without a reload. The page no
   longer renders a stale static snapshot.
@@ -189,7 +207,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ## [2.36] - 2026-10-05
 
 ### Added
-- Dot detail page now has a "Queue a task" form (hidden dot_id,
+- Dot detail page now has a "Queue a task" form (hidden dot_i
+d,
   goal input) - new tasks can be queued directly from the Dot.
 
 ## [2.35] - 2026-10-05
@@ -250,7 +269,8 @@ The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Tasks page live view: HTMX polling every 5s via
   GET /api/tasks/rows - statuses update without a reload.
-- Per-task Detail button (POST /api/tasks/detail): shows ID, dot,
+- Per-task Detail button (POST /api/tas
+ks/detail): shows ID, dot,
   goal, status, priority, result, error, created/updated times
   and the recorded plan steps.
 
@@ -310,7 +330,8 @@ g). Imported skills still require
   via GET /api/models/rows; backend status changes
   appear without a manual reload.
 
-## [2.17] - 2026-10-05
+## [2.17] - 202
+6-10-05
 
 ### Added
 - Approved-skill execution support:
@@ -377,7 +398,8 @@ e models
 ### Added
 - Always-allow grants manager in the /approvals UI:
   persisted grants table with per-rule Revoke button,
-  POST /api/grants/revoke (audited).
+  POST /api/gra
+nts/revoke (audited).
 
 ### Fixed
 - Files corrupted by fetch-induced line wraps
@@ -449,7 +471,8 @@ rve OpenAI-compatible server
 - Dangerous patterns always win over always-allow grants
   (no grant can whitelist rm -rf /).
 
-## [2.5] - 2026-10-04
+## [2.5] - 2026-10
+-04
 
 ### Added
 - Skill approval lifecycle (submit/approve/reject)
