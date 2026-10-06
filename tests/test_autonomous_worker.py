@@ -17,3 +17,22 @@ async def test_worker_completes_task():
 
 async def _ok():
     return "done"
+
+
+@pytest.mark.asyncio
+async def test_worker_recovers_persisted_work():
+    class RecoverTasks(FakeTasks):
+        def list(self, status=None, limit=200):
+            if status == "QUEUED":
+                return [type("T", (), {"id":"q1", "priority":2})()]
+            if status == "RETRYING":
+                return [type("T", (), {"id":"r1", "priority":1})()]
+            if status == "RUNNING":
+                return [type("T", (), {"id":"run1", "priority":1})()]
+            return []
+    tasks = RecoverTasks()
+    worker = AutonomousWorker(tasks, WorkerLimits())
+    recovered = await worker.recover()
+    assert set(recovered) == {"q1", "r1", "run1"}
+    assert worker._queued == {"q1", "r1", "run1"}
+    assert any(args[1] == "QUEUED" for args in tasks.status)
