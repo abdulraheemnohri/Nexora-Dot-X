@@ -85,11 +85,13 @@ START_TIME = time()
 
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED"}
 PAGE_SIZE = 20
+MEMORY_PAGE_SIZE = 20
 
 
 def create_app():
     app, rt = fast_app()
     tasks = TaskEngine()
+    worker_state = {"paused": False}
     planner = Planner()
     approvals = ApprovalCenter()
     chat = ChatService()
@@ -135,6 +137,7 @@ def create_app():
                             + ((" (" + str(pending_approvals) + ")")
                                if pending_approvals else ""),
                             href="/approvals"), " · ",
+                          A("Audit", href="/audit"), " · ",
                           A("Settings", href="/settings")),
                       H2("Live status"),
                       Div(id="status-live",
@@ -184,7 +187,27 @@ def create_app():
             + " · Always-allow grants: "
             + str(len(grants_store.list_grants()))
             + " · Pending skills: " + str(len(skills.pending())) + " · Worker: "
-            + ("running" if worker_runtime.running else "stopped") + "</p>")
+            + ("running" if worker_runtime.running else "stopped") + "</p>"
+            + "<p>Tasks: running "
+            + str(len(tasks.list(status="RUNNING")))
+            + " · queued " + str(len(tasks.list(status="QUEUED")))
+            + " · completed " + str(len(tasks.list(status="COMPLETED")))
+            + " · failed " + str(len(tasks.list(status="FAILED"))) + "</p>")
+        with SessionFactory() as s:
+            dots = list(s.query(Dot).order_by(Dot.created_at.desc()))
+        if dots:
+            dot_html = ""
+            for d in dots:
+                state = "enabled" if d.enabled else "paused"
+                label = "Pause" if d.enabled else "Resume"
+                dot_html += (
+                    "<li>" + str(d.name).replace("<", "&lt;")
+                    + " <small>[" + state + "]</small>"
+                    + ' <form method="post" action="/api/dots/toggle">'
+                    + '<input type="hidden" name="dot_id" value="'
+                    + str(d.id) + '">'
+                    + "<button>" + label + "</button></form></li>")
+            html += "<h3>Dots</h3><ul>" + dot_html + "</ul>"
         if rows:
             html += ("<table><tr><th>Backend</th><th>Status</th>"
                      "<th>Model</th></tr>" + rows + "</table>")
@@ -301,13 +324,21 @@ def create_app():
         return Ul(raw("".join(items)))
 
     @rt("/api/memory/rows")
-    def memory_rows(query: str = ""):
+    def memory_rows(query: str = "", page: int = 1):
         """Live search fragment: debounced memory search (HTMX)."""
         query = (query or "").strip()
         if not query:
             return P("Type to search memories (live).",
                      style="color:#999")
+        try:
+            page = max(1, int(page))
+        except (TypeError, ValueError):
+            page = 1
         hits = memory.search_detailed(query, limit=100)
+        total = len(hits)
+        pages = max(1, (total + MEMORY_PAGE_SIZE - 1) // MEMORY_PAGE_SIZE)
+        hits = hits[(page - 1) * MEMORY_PAGE_SIZE:
+                    page * MEMORY_PAGE_SIZE]
         if not hits:
             return P("No memories found.")
         items = []
@@ -326,7 +357,17 @@ def create_app():
                           + str(conf) + "</small>")
             text = str(h.get("content", "")).replace("<", "&lt;")
             items.append("<li>" + text + badge + "</li>")
-        return Ul(raw("".join(items)))
+        nav = ""
+        if pages > 1:
+            for p in range(1, pages + 1):
+                if p == page:
+                    nav += " <b>[" + str(p) + "]</b>"
+                else:
+                    nav += (' <a href="/api/memory/rows?query='
+                            + query.replace(" ", "%20")
+                            + "&page=" + str(p) + '">'
+                            + str(p) + "</a>")
+        return Div(Ul(raw("".join(items))), raw(nav))
 
     @rt("/api/memory/remember", methods=["POST"])
     def memory_remember(content: str, kind: str = "semantic"):
@@ -672,6 +713,7 @@ def create_app():
                      "<ul>" + items + "</ul>")
         skill_dir = s.get("_dir") or ""
         files = ""
+        preview_files = []
         if skill_dir:
             from pathlib import Path
             d = Path(skill_dir)
@@ -682,8 +724,24 @@ def create_app():
                         files += ("<li>"
                                   + f.relative_to(d).as_posix()
                                   + " (" + str(size) + " bytes)</li>")
+                        if len(preview_files) < 3 and size <= 4096:
+                            try:
+                                text = f.read_text(
+                                    encoding="utf-8",
+                                    errors="replace")
+                                preview_files.append(
+                                    (f.relative_to(d).as_posix(),
+                                     text))
+                            except OSError:
+                                pass
         if files:
             html += "<h4>Files</h4><ul>" + files + "</ul>"
+        for fname, text in preview_files:
+            html += ("<details><summary>Preview: "
+                     + fname.replace("<", "&lt;")
+                     + "</summary><pre>"
+                     + text[:1500].replace("<", "&lt;")
+                     + "</pre></details>")
         return raw(html)
 
     @rt("/api/skills/run", methods=["POST"])
@@ -717,10 +775,10 @@ def create_app():
                                + " · " + d.id),
                             Form(Button(("Pause" if d.enabled
                                          else "Resume")),
+                                 Input(type="hidden", name="dot_id",
+                                       value=d.id),
                                  action="/api/dots/toggle",
                                  method="post"),
-                            Input(type="hidden", name="dot_id",
-                                  value=d.id),
                             P(A("View details", href="/dots/" + d.id)))
                         for d in items))
 
@@ -802,25 +860,44 @@ def create_app():
 
     # ---- tasks --------------------------------------------------------------
 
-    def _task_filter_links():
+    def _task_filter_links(current: str = "", dot_id: str = ""):
+        def _qs(status, dot):
+            q = ""
+            if status:
+                q += "?status=" + status
+            if dot:
+                q += ("&" if q else "?") + "dot=" + dot
+            return q
+
+        def _link(label, value):
+            href = "/tasks" + _qs(value, dot_id)
+            shown = "[" + label + "]" if value == current else label
+            return A(shown, href=href)
+
         return Div(
-            A("All", hx_get="/api/tasks/rows",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("All", ""),
             " · ",
-            A("RUNNING", hx_get="/api/tasks/rows?status=RUNNING",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("RUNNING", "RUNNING"),
             " · ",
-            A("COMPLETED", hx_get="/api/tasks/rows?status=COMPLETED",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("COMPLETED", "COMPLETED"),
             " · ",
-            A("FAILED", hx_get="/api/tasks/rows?status=FAILED",
-              hx_target="#tasks-live", hx_swap="innerHTML"),
+            _link("FAILED", "FAILED"),
             " · ",
-            A("CANCELLED", hx_get="/api/tasks/rows?status=CANCELLED",
-              hx_target="#tasks-live", hx_swap="innerHTML"))
+            _link("CANCELLED", "CANCELLED"))
 
     @rt("/tasks")
-    def task_page():
+    def task_page(status: str = "", dot: str = ""):
+        with SessionFactory() as s:
+            all_dots = list(s.query(Dot).order_by(
+                Dot.created_at.desc()))
+        dot_options = '<option value="">All dots</option>'
+        for d in all_dots:
+            selected = (" selected" if str(d.id) == (dot or "")
+                        else "")
+            dot_options += ('<option value="' + str(d.id) + '"'
+                            + selected + ">"
+                            + str(d.name).replace("<", "&lt;")
+                            + " (id " + str(d.id) + ")</option>")
         return Titled("Tasks", H1("Tasks"),
                       Form(Input(name="dot_id", placeholder="Dot ID",
                                  required=True),
@@ -829,16 +906,25 @@ def create_app():
                            Button("Queue task"), action="/api/tasks",
                            method="post"),
                       H2("Filter"),
-                      _task_filter_links(),
+                      _task_filter_links(status, dot),
+                      raw('<form method="get" action="/tasks">'
+                          + '<input type="hidden" name="status" value="'
+                          + str(status or "") + '">'
+                          + '<select name="dot">' + dot_options
+                          + '</select>'
+                          + '<button>Filter by dot</button></form>'),
                       H2("Tasks"),
                       Div(id="tasks-live",
-                          hx_get="/api/tasks/rows",
+                          hx_get="/api/tasks/rows"
+                          + (("?status=" + status) if status else "")
+                          + ((("&dot=" + dot) if status else ("?dot=" + dot))
+                             if dot else ""),
                           hx_trigger="load, every 5s",
                           hx_swap="innerHTML"),
                       Div(id="tasks-result"))
 
     @rt("/api/tasks/rows")
-    def tasks_rows(status: str = "", page: int = 1):
+    def tasks_rows(status: str = "", dot: str = "", page: int = 1):
         """Live task table fragment (HTMX polling every 5s).
 
         Optional ?status= filter narrows the list to one status.
@@ -849,7 +935,8 @@ def create_app():
             page = max(1, int(page))
         except (TypeError, ValueError):
             page = 1
-        all_tasks = tasks.list(status=(status or None))
+        all_tasks = tasks.list(status=(status or None),
+                                 dot_id=(dot or None))
         total = len(all_tasks)
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
         start = (page - 1) * PAGE_SIZE
@@ -881,7 +968,8 @@ def create_app():
             links = ""
             for p in range(1, pages + 1):
                 href = ("/api/tasks/rows?page=" + str(p)
-                        + (("&status=" + status) if status else ""))
+                        + (("&status=" + status) if status else "")
+                        + (("&dot=" + dot) if dot else ""))
                 if p == page:
                     links += " <b>[" + str(p) + "]</b>"
                 else:
@@ -947,6 +1035,10 @@ def create_app():
 
     async def runtime_submit(dot_id, goal):
         task = tasks.create(goal, dot_id=dot_id)
+        if worker_state["paused"]:
+            tasks.set_status(task.id, "QUEUED",
+                             "Task processing is paused")
+            return task
         plan = planner.plan(goal)
         if not plan:
             tasks.set_status(task.id, "FAILED", "Planner returned no steps")
@@ -1193,8 +1285,63 @@ def create_app():
                       P("Auth enabled: " + str(settings.auth_enabled)),
                       P("Host: " + str(settings.host) + ":"
                         + str(settings.port)),
+                      H2("Task worker"),
+                      P("Task processing: "
+                        + ("PAUSED" if worker_state["paused"]
+                           else "running")),
+                      P("Max workers: "
+                        + str(get_profile().max_workers)),
+                      Form(Button(("Resume task processing"
+                                   if worker_state["paused"]
+                                   else "Pause task processing")),
+                           action="/api/worker/toggle",
+                           method="post"),
                       Form(Button("Logout"), action="/auth/logout",
                            method="post"))
+
+    @rt("/audit")
+    def audit_page():
+        """Audit log viewer (System 1 transparency)."""
+        from nexora.control.audit import tail as audit_tail
+        entries = audit_tail(100)
+        rows = ""
+        for e in entries:
+            rows += ("<tr><td>"
+                     + str(e.created_at).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.actor).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.tool).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.action).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.decision).replace("<", "&lt;")
+                     + "</td><td>"
+                     + str(e.outcome).replace("<", "&lt;")
+                     + "</td></tr>")
+        if not rows:
+            rows = ("<tr><td colspan='6'>No audit entries yet."
+                    "</td></tr>")
+        return Titled("Audit", H1("Audit log"),
+                      P("Last 100 sensitive operations "
+                        + "(newest first)."),
+                      raw("<table><tr><th>Time</th><th>Actor</th>"
+                          + "<th>Tool</th><th>Action</th>"
+                          + "<th>Decision</th><th>Outcome</th>"
+                          + "</tr>" + rows + "</table>"))
+
+    @rt("/api/worker/toggle", methods=["POST"])
+    def worker_toggle():
+        """Pause or resume task processing (System 1 switch)."""
+        from nexora.control.audit import audit
+        worker_state["paused"] = not worker_state["paused"]
+        audit("user", tool="worker", action="toggle",
+              decision=("PAUSE" if worker_state["paused"]
+                        else "RESUME"),
+              outcome=("task processing paused"
+                       if worker_state["paused"]
+                       else "task processing resumed"))
+        return RedirectResponse("/settings", status_code=303)
 
     app = AuthMiddleware(app)
     return app
