@@ -74,6 +74,7 @@ START_TIME = time()
 
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED"}
 PAGE_SIZE = 20
+MEMORY_PAGE_SIZE = 20
 
 
 def create_app():
@@ -151,6 +152,21 @@ def create_app():
             + " · Always-allow grants: "
             + str(len(grants_store.list_grants()))
             + " · Pending skills: " + str(len(skills.pending())) + "</p>")
+        with SessionFactory() as s:
+            dots = list(s.query(Dot).order_by(Dot.created_at.desc()))
+        if dots:
+            dot_html = ""
+            for d in dots:
+                state = "enabled" if d.enabled else "paused"
+                label = "Pause" if d.enabled else "Resume"
+                dot_html += (
+                    "<li>" + str(d.name).replace("<", "&lt;")
+                    + " <small>[" + state + "]</small>"
+                    + ' <form method="post" action="/api/dots/toggle">'
+                    + '<input type="hidden" name="dot_id" value="'
+                    + str(d.id) + '">'
+                    + "<button>" + label + "</button></form></li>")
+            html += ("<h3>Dots</h3><ul>" + dot_html + "</ul>")
         if rows:
             html += ("<table><tr><th>Backend</th><th>Status</th>"
                      "<th>Model</th></tr>" + rows + "</table>")
@@ -264,13 +280,21 @@ def create_app():
         return Ul(raw("".join(items)))
 
     @rt("/api/memory/rows")
-    def memory_rows(query: str = ""):
+    def memory_rows(query: str = "", page: int = 1):
         """Live search fragment: debounced memory search (HTMX)."""
         query = (query or "").strip()
         if not query:
             return P("Type to search memories (live).",
                      style="color:#999")
+        try:
+            page = max(1, int(page))
+        except (TypeError, ValueError):
+            page = 1
         hits = memory.search_detailed(query, limit=100)
+        total = len(hits)
+        pages = max(1, (total + MEMORY_PAGE_SIZE - 1) // MEMORY_PAGE_SIZE)
+        hits = hits[(page - 1) * MEMORY_PAGE_SIZE:
+                    page * MEMORY_PAGE_SIZE]
         if not hits:
             return P("No memories found.")
         items = []
@@ -289,7 +313,17 @@ def create_app():
                           + str(conf) + "</small>")
             text = str(h.get("content", "")).replace("<", "&lt;")
             items.append("<li>" + text + badge + "</li>")
-        return Ul(raw("".join(items)))
+        nav = ""
+        if pages > 1:
+            for p in range(1, pages + 1):
+                if p == page:
+                    nav += " <b>[" + str(p) + "]</b>"
+                else:
+                    nav += (' <a href="/api/memory/rows?query='
+                            + query.replace(" ", "%20")
+                            + "&page=" + str(p) + '">'
+                            + str(p) + "</a>")
+        return Div(Ul(raw("".join(items))), raw(nav))
 
     @rt("/api/memory/remember", methods=["POST"])
     def memory_remember(content: str, kind: str = "semantic"):
@@ -680,10 +714,10 @@ def create_app():
                                + " · " + d.id),
                             Form(Button(("Pause" if d.enabled
                                          else "Resume")),
+                                 Input(type="hidden", name="dot_id",
+                                       value=d.id),
                                  action="/api/dots/toggle",
                                  method="post"),
-                            Input(type="hidden", name="dot_id",
-                                  value=d.id),
                             P(A("View details", href="/dots/" + d.id)))
                         for d in items))
 

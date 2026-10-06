@@ -3,6 +3,21 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.50] - 2026-10-06
+
+### Added
+- Home dashboard: live status card now lists every Dot
+  with its state and an inline Pause/Resume button,
+  so Dots can be controlled straight from the home
+  page.
+- Memory page: live search results are paginated (20
+  per page) with numbered page links.
+
+### Fixed
+- Dots page: the Pause/Resume form did not actually
+  submit the Dot ID (the hidden input sat outside the
+  form element), so toggling never worked. The hidden
+  input is now inside the form.
 ## [2.49] - 2026-10-05
 
 ### Fixed
