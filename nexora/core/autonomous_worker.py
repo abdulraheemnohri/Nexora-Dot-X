@@ -26,6 +26,20 @@ class AutonomousWorker:
         self._running = False
         self._active: set[str] = set()
 
+    async def recover(self):
+        """Requeue durable work left by a previous process after restart."""
+        recovered = []
+        for status in (TaskStatus.QUEUED.value, TaskStatus.RETRYING.value, TaskStatus.RUNNING.value):
+            for task in self.tasks.list(status=status, limit=10000):
+                if task.id in self._queued or task.id in self._active:
+                    continue
+                if status == TaskStatus.RUNNING.value:
+                    self.tasks.set_status(task.id, TaskStatus.QUEUED.value,
+                                          error="worker restarted; resuming durable task")
+                await self.enqueue(task.id, priority=task.priority or 1)
+                recovered.append(task.id)
+        return recovered
+
     async def enqueue(self, task_id: str, priority: int = 1):
         if task_id not in self._queued:
             self._queued.add(task_id)
