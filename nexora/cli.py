@@ -52,7 +52,8 @@ def status():
         typer.echo(f"always-allow grants: "
                    f"{len(grants_store.list_grants())}")
         sm = SkillManager()
-        typer.echo(f"skills: {len(sm.pending())} pending, "
+        typer.echo(f"skills: {len(sm.pending())
+} pending, "
                    f"{len(sm.scan())} active")
         from nexora.core.task_engine import TaskEngine
         te = TaskEngine()
@@ -95,7 +96,8 @@ def start(profile: str = typer.Option(os.getenv("NEXORA_PROFILE", "balanced"),
     if with_litert_serve:
         from nexora.models.litert import cli_bridge
         args = cli_bridge.build_serve_args(host="127.0.0.1", port=serve_port)
-        serve_proc = cli_bridge.spawn_serve(args)
+        serve_proc = cli_bridge.spawn_serve(arg
+s)
         if serve_proc is None:
             typer.secho("litert-lm CLI not found - skipping the serve "
                         "attachment. Install with: pip install litert-lm",
@@ -157,7 +159,8 @@ def litert_list():
 
 @litert.command("install")
 def litert_install(
-    repo: str = typer.Option(DEFAULT_LITERT_MODEL, "--repo", "-r",
+    repo: str = typer.Option(DEFAULT_LITERT_MODEL, "--rep
+o", "-r",
                              help="HuggingFace repo (default: built-in Gemma model)"),
     allow_network: bool = typer.Option(
         False, "--allow-network", "-y",
@@ -199,7 +202,8 @@ def litert_import(
     try:
         cli_bridge.require_network(allow_network)
         args = cli_bridge.build_import_args(repo, file, local_name)
-        result = cli_bridge.run_cli(args, network=True)
+        result = cli_bridge.run_cli(args, networ
+k=True)
     except PermissionError as e:
         typer.secho(str(e), fg=typer.colors.YELLOW)
         typer.echo("Re-run with --allow-network to confirm.")
@@ -241,7 +245,8 @@ def litert_run(
         scan_result = scan(str(settings.model_dir))
         models = scan_result["models"]
         ref = model
-        if not ref and models:
+      
+  if not ref and models:
             m0 = models[0]
             ref = m0["path"] if isinstance(m0, dict) else str(m0)
         if not ref:
@@ -291,7 +296,8 @@ def litert_serve(
     host: str = typer.Option("127.0.0.1", "--host",
                              help="Host to bind (official litert-lm server)"),
     port: int = typer.Option(9379, "--port",
-                             help="Port (default 9379, OpenAI-compatible)"),
+                             h
+elp="Port (default 9379, OpenAI-compatible)"),
     verbose: bool = typer.Option(False, "--verbose", help="Verbose logging"),
 ):
     """Start the official litert-lm OpenAI-compatible server (/v1 endpoints)."""
@@ -339,7 +345,8 @@ def litert_doctor():
 def skills_list(pending_only: bool = typer.Option(
         False, "--pending", help="Only skills awaiting approval")):
     """List active (and optionally pending) skills."""
-    from nexora.skills.manager import SkillManager
+    from nexora.skills.manage
+r import SkillManager
     sm = SkillManager()
     pend = sm.pending()
     act = sm.scan()
@@ -392,7 +399,8 @@ def skills_scan_cmd(name: str = typer.Argument(..., help="Skill name")):
         typer.echo(f"Scan clean for {name} "
                    f"({r['files_scanned']} file(s)).")
         return
-    typer.secho(f"Findings for {name}:", fg=typer.colors.RED)
+    typer.secho(f"Findings for {name}:", fg=typer.colors.RED
+)
     for i in r["issues"]:
         typer.echo("  - " + i)
     raise typer.Exit(1)
@@ -446,7 +454,8 @@ def _unpack_skill_zip(archive: str = None, url: str = None,
             typer.secho("Archive not found: " + archive,
                         fg=typer.colors.RED)
             raise typer.Exit(1)
-    try:
+    t
+ry:
         shutil.unpack_archive(str(zip_path), str(tmp_root), "zip")
     except Exception as e:
         typer.secho("Not a valid .zip archive: " + str(e),
@@ -498,7 +507,8 @@ def skills_validate(
             raise typer.Exit(1)
         name = meta.get("name") or skill_src.name
         typer.echo(f"Skill:    {name}")
-        typer.echo(f"Desc:     {meta.get('description', '')}")
+        ty
+per.echo(f"Desc:     {meta.get('description', '')}")
         files = [f for f in sorted(skill_src.glob("**/*")) if f.is_file()]
         typer.echo(f"Files:    {len(files)}")
         for f in files:
@@ -548,7 +558,8 @@ def skills_import(
                                       allow_network=allow_network,
                                       tmp_root=tmp_root)
         try:
-            r = SkillManager().install_from_dir(skill_src)
+            r = Ski
+llManager().install_from_dir(skill_src)
         except Exception as e:
             typer.secho("Import failed: " + str(e), fg=typer.colors.RED)
             raise typer.Exit(1)
@@ -595,7 +606,8 @@ def tasks_list(status: str = typer.Option(
                         "FAILED/CANCELLED/...)"),
                limit: int = typer.Option(20, "--limit", "-l",
                                          help="Max tasks to show")):
-    """List tasks (newest first), optionally filtered by status."""
+    """List tasks (newest first), optionally filtered 
+by status."""
     from nexora.core.task_engine import TaskEngine
     rows = TaskEngine().list(status=(status or None), limit=limit)
     if not rows:
@@ -651,7 +663,8 @@ def tasks_cancel(task_id: str = typer.Argument(..., help="Task ID")):
 # ---- dots CLI -----------------------------------------------------------
 
 @dots.command("list")
-def dots_list(enabled_only: bool = typer.Option(
+def dots_list(enabled_only: bool = 
+typer.Option(
         False, "--enabled", help="Only enabled Dots")):
     """List Dots with their status."""
     from nexora.database.runtime import SessionFactory
@@ -701,7 +714,8 @@ def dots_detail(dot_id: str = typer.Argument(..., help="Dot ID")):
     typer.echo(f"Name:        {d.name}")
     typer.echo(f"Mission:     {d.mission or '(none)'}")
     typer.echo(f"Description: {d.description or '(none)'}")
-    typer.echo(f"Personality: {d.personality or '(none)'}")
+    typer.e
+cho(f"Personality: {d.personality or '(none)'}")
     typer.echo(f"Model:       {d.model or '(default)'}")
     typer.echo(f"Status:      {d.status or '(none)'}")
     typer.echo(f"Enabled:     {'yes' if d.enabled else 'no'}")
@@ -751,7 +765,8 @@ def approvals_approve(approval_id: str = typer.Argument(..., help="Approval ID")
     from nexora.control.approvals import ApprovalCenter
     a = ApprovalCenter().approve(approval_id, always=always)
     if a is None:
-        typer.secho("Approval not found: " + approval_id, fg=typer.colors.RED)
+        typer.secho("Approval not found: " + appr
+oval_id, fg=typer.colors.RED)
         raise typer.Exit(1)
     suffix = " (always-allow rule saved)" if always else ""
     typer.echo(f"Approved: {a.tool}:{a.action} ({approval_id}){suffix}")
@@ -795,7 +810,8 @@ def memory_remember(content: str = typer.Argument(..., help="Content to save"),
     """Save a new memory."""
     from nexora.core.memory_service import MemoryService
     ok = MemoryService().remember(content, kind=kind,
-                                  importance=importance)
+                                  importan
+ce=importance)
     if not ok:
         typer.secho("Empty content not saved.", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -812,11 +828,15 @@ def memory_forget(query: str = typer.Argument(..., help="Search query"),
         typer.confirm("Delete all memories matching '" + query
                       + "'?", abort=True)
     n = MemoryService().forget(query)
-    typer.echo(f"Deleted {n} memory(ies).")
+    typer.echo(f"Deleted {n} memory(ies)."
 
-def main():
-    cli()
+... [Content truncated]
 
+# ---- interactive TUI ------------------------------------------------------
 
-if __name__ == "__main__":
-    main()
+@cli.command()
+def tui(refresh: int = typer.Option(2, "--refresh",
+                                    help="Seconds between redraws in watch mode")):
+    """Interactive terminal dashboard (Dots, Tasks, Models, Approvals)."""
+    from nexora.tui.app import run
+    run(refresh=refresh)
