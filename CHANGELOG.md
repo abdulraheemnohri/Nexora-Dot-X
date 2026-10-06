@@ -3,6 +3,17 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.51] - 2026-10-06
+
+### Changed
+- Docs: README refreshed to cover the 0.2.38-0.2.50
+  feature wave - new Web UI pages (/dots, /tasks), the
+  home dashboard dot quick-toggle, paginated memory
+  search, skills .zip import + JSON export, the CLI
+  task/dot/approval/memory subcommands and the full
+  `nexora status` overview. Several broken line wraps
+  in older README sections were also repaired.
+
 ## [2.50] - 2026-10-06
 
 ### Added
