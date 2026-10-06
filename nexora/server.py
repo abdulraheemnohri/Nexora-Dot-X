@@ -20,6 +20,8 @@ from nexora.core.task_step_runner import TaskStepRunner
 from nexora.core.executor import Executor
 from nexora.tools.runtime import build_registry
 from nexora.core.profiles import PROFILES, get_profile
+from nexora.channels.gateway import Gateway
+from nexora.mcp.config_service import MCPConfigService
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
 from nexora.database import repositories as repo
@@ -97,6 +99,8 @@ def create_app():
     worker_runtime = WorkerRuntime(AutonomousWorker(tasks, WorkerLimits(max_concurrent=profile.max_workers)))
     tool_registry = build_registry()
     step_runner = TaskStepRunner(Executor(tool_registry))
+    mcp_config = MCPConfigService()
+    channel_gateway = Gateway(tasks=tasks)
 
     async def _worker_executor(step):
         return await step_runner(step)
@@ -976,6 +980,13 @@ def create_app():
         tasks.set_status(approval.task_id, "FAILED", error=outcome.output)
         return outcome, outcome.output
 
+    @rt("/api/channels/webhook/{channel_name}", methods=["POST"])
+    async def channel_webhook(channel_name: str, text: str = "", dot_id: str = "", sender: str = ""):
+        """Generic local webhook ingress; external adapters should verify signatures upstream."""
+        return await channel_gateway.route_async(
+            channel_name, {"text": text, "dot_id": dot_id or None, "sender": sender}
+        )
+
     # ---- approvals ---------------------------------------------------------
 
     def _pending_cards():
@@ -1101,20 +1112,31 @@ def create_app():
 
     @rt("/mcp")
     def mcp_page():
-        try:
-            from nexora.mcp.gateway import MCPGateway
-            gateway = MCPGateway()
-            servers = gateway.servers_list()
-        except Exception as exc:
-            return Titled("MCP", H1("MCP Gateway"), P("Unavailable: " + str(exc)))
         rows = []
-        for s in servers:
-            rows.append(Tr(Td(str(s.get("id", ""))), Td(str(s.get("name", ""))),
-                           Td("enabled" if s.get("enabled") else "disabled")))
+        for s in mcp_config.list():
+            rows.append(Tr(Td(str(s.id)), Td(str(s.name)),
+                           Td("enabled" if s.enabled else "disabled"),
+                           Td("trusted" if s.trusted else "approval required"),
+                           Td(", ".join(__import__("json").loads(s.allowed_tools_json or "[]")))))
         return Titled("MCP", H1("MCP Gateway"),
-                      P("MCP servers are transport/policy controlled; tool execution still passes through System 1."),
-                      Table(Thead(Th("ID"), Th("Name"), Th("State")), *rows)
-                      if rows else P("No MCP servers configured."))
+                      P("Persistent MCP configuration. Untrusted tools remain subject to System 1 approval."),
+                      Form(Input(name="server_id", placeholder="server id", required=True),
+                           Input(name="name", placeholder="display name", required=True),
+                           Input(name="command", placeholder="stdio command, space separated", required=True),
+                           Input(name="cwd", placeholder="working directory"),
+                           Label(Input(name="enabled", type="checkbox"), " Enabled"),
+                           Label(Input(name="trusted", type="checkbox"), " Trusted"),
+                           Button("Save MCP server"), method="post", action="/api/mcp/save"),
+                      Table(Thead(Th("ID"), Th("Name"), Th("State"), Th("Trust"), Th("Tools")),
+                            *rows) if rows else P("No MCP servers configured."))
+
+    @rt("/api/mcp/save", methods=["POST"])
+    def mcp_save(server_id: str, name: str, command: str, cwd: str = "",
+                 enabled: bool = False, trusted: bool = False):
+        import shlex
+        mcp_config.save(server_id.strip(), name.strip(), shlex.split(command),
+                        cwd.strip(), enabled, trusted)
+        return RedirectResponse("/mcp", status_code=303)
 
     @rt("/settings")
     def settings_page():
