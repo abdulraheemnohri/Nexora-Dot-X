@@ -85,6 +85,32 @@ class AutonomousWorker:
 
     async def run_forever(self, executor: Callable[[object], Awaitable[object]]):
         self._running = True
+        tasks: set[asyncio.Task] = set()
+        try:
+            while self._running:
+                while len(tasks) < max(1, self.limits.max_concurrent) and not self._queue.empty():
+                    _, task_id = await self._queue.get()
+                    self._queued.discard(task_id)
+                    t = asyncio.create_task(self._run_one(task_id, executor))
+                    tasks.add(t)
+                    t.add_done_callback(tasks.discard)
+                if tasks:
+                    await asyncio.sleep(0.05)
+                else:
+                    await asyncio.sleep(0.25)
+        except asyncio.CancelledError:
+            self._running = False
+            for task in list(tasks):
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        except Exception:
+            self._running = False
+            raise
+
+    async def run_forever_legacy(self, executor: Callable[[object], Awaitable[object]]):
+        self._running = True
         while self._running:
             try:
                 await self.run_once(executor)
