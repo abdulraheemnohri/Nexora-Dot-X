@@ -44,3 +44,13 @@ class ActionBridge:
                     "tool": proposal.tool}
         return {"ok": True, "decision": decision.value,
                 "result": self.registry.run(proposal.tool, proposal.arguments)}
+
+
+    async def dispatch_async(self, proposal: ActionProposal):
+        """Async System-1 dispatch for action-model proposals."""
+        decision, reason = self.authorize(proposal)
+        if decision is not Decision.ALLOW:
+            return {"ok": False, "decision": decision.value, "reason": reason,
+                    "tool": proposal.tool}
+        return {"ok": True, "decision": decision.value,
+                "result": await self.registry.run_async(proposal.tool, proposal.arguments)}
