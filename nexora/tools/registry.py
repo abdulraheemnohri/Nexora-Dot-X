@@ -42,6 +42,18 @@ class ToolRegistry:
         if async_handler is not None:
             self._async_handlers[spec.id] = async_handler
 
+    def bind(self, tool_id: str, handler=None, async_handler=None):
+        if tool_id not in self._tools:
+            raise KeyError(tool_id)
+        if handler is not None:
+            self._handlers[tool_id] = handler
+        if async_handler is not None:
+            self._async_handlers[tool_id] = async_handler
+
+    def unbind(self, tool_id: str):
+        self._handlers.pop(tool_id, None)
+        self._async_handlers.pop(tool_id, None)
+
     def get(self, tool_id: str) -> ToolSpec | None:
         return self._tools.get(tool_id)
 
