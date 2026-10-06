@@ -26,6 +26,8 @@ def init_db(db_path: Path | None = None):
             conn.execute(text("ALTER TABLE approvals ADD COLUMN task_id VARCHAR"))
         if "step_id" not in approval_columns:
             conn.execute(text("ALTER TABLE approvals ADD COLUMN step_id VARCHAR"))
+        if "arguments_json" not in approval_columns:
+            conn.execute(text("ALTER TABLE approvals ADD COLUMN arguments_json TEXT"))
     SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False)
     return _engine
 
