@@ -5,7 +5,8 @@ platform metadata, and safe dispatch. Handlers may still apply tool-specific
 policy (for example terminal policy) as a defense-in-depth layer.
 """
 from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable
+from typing import Any, Callable
+import inspect
 
 
 @dataclass
@@ -138,7 +139,9 @@ class ToolRegistry:
         try:
             handler = self._async_handlers.get(tool_id)
             if handler is not None:
-                result = await handler(action)
+                result = handler(action)
+                if inspect.isawaitable(result):
+                    result = await result
             else:
                 result = self._handlers.get(tool_id)(action) if self._handlers.get(tool_id) else {"ok": True, "output": f"{tool_id}: {action} (no handler bound)"}
             return result if isinstance(result, dict) else {"ok": True, "output": str(result)}
