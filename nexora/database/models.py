@@ -169,3 +169,27 @@ class Event(Base):
     kind = Column(String, nullable=False)
     payload = Column(Text, default="")
     created_at = Column(Float, default=now)
+
+
+class MCPServerConfig(Base):
+    __tablename__ = "mcp_servers"
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    command_json = Column(Text, default="[]")
+    cwd = Column(Text, default="")
+    enabled = Column(Boolean, default=False)
+    trusted = Column(Boolean, default=False)
+    allowed_tools_json = Column(Text, default="[]")
+    created_at = Column(Float, default=now)
+    updated_at = Column(Float, default=now, onupdate=now)
+
+
+class ChannelConfig(Base):
+    __tablename__ = "channels"
+    id = Column(String, primary_key=True, default=uid)
+    name = Column(String, nullable=False, unique=True)
+    enabled = Column(Boolean, default=False)
+    dot_id = Column(String, nullable=True)
+    config_json = Column(Text, default="{}")
+    created_at = Column(Float, default=now)
+    updated_at = Column(Float, default=now, onupdate=now)
