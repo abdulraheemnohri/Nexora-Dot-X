@@ -57,7 +57,7 @@ class MCPGateway:
 
     def bind_handler(self, tool_id: str, handler: Callable):
         self.handlers[tool_id] = handler
-        self.registry._handlers[tool_id] = handler
+        self.registry.bind(tool_id, handler=handler)
 
     def schemas(self): return self.registry.schemas()
     def servers_list(self): return list(self.servers.values())
@@ -85,7 +85,7 @@ class MCPGateway:
                     result['content'] = result['content'][:self.policy.max_output_chars]
                 return {'ok': True, 'output': str(result)[:self.policy.max_output_chars]}
             self.handlers[tool_id] = call
-            self.registry._async_handlers[tool_id] = call
+            self.registry.bind(tool_id, async_handler=call)
         server.metadata['transport'] = 'stdio'
         server.metadata['client'] = client
         return tools
@@ -110,8 +110,7 @@ class MCPGateway:
         for tool_id in list(self.handlers):
             if tool_id.startswith(prefix):
                 self.handlers.pop(tool_id, None)
-                self.registry._handlers.pop(tool_id, None)
-                self.registry._async_handlers.pop(tool_id, None)
+                self.registry.unbind(tool_id)
                 spec = self.registry.get(tool_id)
                 if spec is not None:
                     spec.enabled = False
