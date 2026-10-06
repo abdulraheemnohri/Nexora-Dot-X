@@ -23,11 +23,19 @@ class MCPGateway:
 
     def register_server(self, server: MCPServer):
         self.servers[server.id] = server
+        if server.enabled:
+            self.policy.allowed_servers.add(server.id)
+        if server.trusted:
+            self.policy.trusted_servers.add(server.id)
         return server
 
     def set_enabled(self, server_id: str, enabled: bool):
         server = self.servers[server_id]
         server.enabled = enabled
+        if enabled:
+            self.policy.allowed_servers.add(server_id)
+        else:
+            self.policy.allowed_servers.discard(server_id)
         return server
 
     def discover(self, server_id: str, tools: list[dict[str, Any]]):
