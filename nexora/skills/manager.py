@@ -78,14 +78,18 @@ class SkillManager:
         src = self.pending_dir / name
         if not src.exists():
             return {"ok": False, "error": "no pending skill: " + name}
+        try:
+            meta = json.loads((src / "skill.json").read_text(encoding="utf-8"))
+        except Exception as exc:
+            return {"ok": False, "error": "invalid skill.json: " + str(exc)}
+        scan = scan_skill_files({**meta, "_dir": str(src)})
+        if not scan["ok"]:
+            return {"ok": False, "error": "static scan failed: " + "; ".join(scan["issues"])}
         target = self.dir / name
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():
             shutil.rmtree(target)
         shutil.move(str(src), str(target))
-        scan = scan_skill_files({**json.loads((target / "skill.json").read_text(encoding="utf-8")), "_dir": str(target)})
-        if not scan["ok"]:
-            return {"ok": False, "error": "static scan failed: " + "; ".join(scan["issues"])}
         bus.publish("skill.approved", {"name": name})
         return {"ok": True, "skill": name, "status": "active"}
 
