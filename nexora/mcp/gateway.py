@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 from nexora.tools.registry import ToolRegistry, ToolSpec
 from nexora.mcp.runtime import MCPStdioClient, MCPProcessConfig
+from nexora.mcp.policy import MCPPolicy
 
 @dataclass
 class MCPServer:
@@ -14,8 +15,9 @@ class MCPServer:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 class MCPGateway:
-    def __init__(self, registry: ToolRegistry | None = None):
+    def __init__(self, registry: ToolRegistry | None = None, policy: MCPPolicy | None = None):
         self.registry = registry or ToolRegistry()
+        self.policy = policy or MCPPolicy()
         self.servers: dict[str, MCPServer] = {}
         self.handlers: dict[str, Callable] = {}
 
@@ -58,10 +60,21 @@ class MCPGateway:
         await client.start()
         tools = await client.list_tools()
         self.discover(server_id, tools)
-        self.handlers.update({f"mcp.{server_id}.{t['name']}": (lambda args, c=client, n=t['name']: __import__('asyncio').run(c.call_tool(n, args))) for t in tools if t.get('name')})
-        for tool_id, handler in list(self.handlers.items()):
-            if tool_id.startswith(f"mcp.{server_id}."):
-                self.bind_handler(tool_id, handler)
+        for t in tools:
+            name = str(t.get('name', '')).strip()
+            if not name:
+                continue
+            tool_id = f"mcp.{server_id}.{name}"
+            async def call(args, c=client, n=name, sid=server_id):
+                decision = self.policy.evaluate(sid, n)
+                if decision.decision.value != 'ALLOW':
+                    return {'ok': False, 'output': f'MCP policy: {decision.reason}', 'decision': decision.decision.value}
+                result = await c.call_tool(n, args if isinstance(args, dict) else {})
+                if isinstance(result, dict) and 'content' in result:
+                    result['content'] = result['content'][:self.policy.max_output_chars]
+                return {'ok': True, 'output': str(result)[:self.policy.max_output_chars]}
+            self.handlers[tool_id] = call
+            self.registry._async_handlers[tool_id] = call
         server.metadata['transport'] = 'stdio'
         server.metadata['client'] = client
         return tools
