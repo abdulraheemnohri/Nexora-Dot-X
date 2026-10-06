@@ -14,11 +14,11 @@ def test_functiongemma_parses_json_proposal():
 @pytest.mark.asyncio
 async def test_functiongemma_keeps_execution_behind_system1():
     registry = ToolRegistry()
-    registry.register(ToolSpec("safe", "Safe", "Safe", input_schema={
+    registry.register(ToolSpec("filesystem.read", "Filesystem Read", "Filesystem Read", input_schema={
         "type":"object","properties":{"action":{"type":"string"}},
         "required":["action"],"additionalProperties":False}), lambda a: {"ok":True,"output":"done"})
     bridge = ActionBridge(registry)
     adapter = FunctionGemmaAdapter(bridge, lambda prompt:
-        '{"tool":"safe","arguments":{"action":"read-only"},"confidence":1}')
+        '{"tool":"filesystem.read","arguments":{"action":"read-only"},"confidence":1}')
     result = await adapter.execute("do safe thing")
     assert result["ok"]
