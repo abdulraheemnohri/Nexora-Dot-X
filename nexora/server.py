@@ -22,6 +22,8 @@ from nexora.tools.runtime import build_registry
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.channels.gateway import Gateway
 from nexora.mcp.config_service import MCPConfigService
+from nexora.mcp.gateway import MCPGateway
+from nexora.mcp.runtime import MCPProcessConfig
 from nexora.control.approvals import ApprovalCenter
 from nexora.control import always_allow as grants_store
 from nexora.database import repositories as repo
@@ -100,6 +102,7 @@ def create_app():
     tool_registry = build_registry()
     step_runner = TaskStepRunner(Executor(tool_registry))
     mcp_config = MCPConfigService()
+    mcp_gateway = MCPGateway(registry=tool_registry)
     channel_gateway = Gateway(tasks=tasks)
 
     async def _worker_executor(step):
@@ -953,6 +956,8 @@ def create_app():
         tasks.set_status(task.id, "QUEUED")
         await worker_runtime.worker.enqueue(task.id, priority=task.priority or 1)
         return task
+
+    channel_gateway.submit = runtime_submit
 
     async def _resume_approved_task(approval_id: str):
         """Execute an approved step and requeue its durable task."""
