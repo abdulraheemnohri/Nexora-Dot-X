@@ -1,11 +1,9 @@
-"""Shared channel ingress/egress gateway.
-
-All channels normalize inbound events here. The gateway never executes tools
-directly; it hands goals to the durable task/worker pipeline.
-"""
+"""Shared channel ingress/egress gateway with System-1 boundary controls."""
+import hashlib
+import hmac
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
-from nexora.core.task_engine import TaskEngine
 
 @dataclass
 class ChannelMessage:
@@ -16,46 +14,57 @@ class ChannelMessage:
     reply_target: str | None = None
     metadata: dict[str, Any] | None = None
 
-class Channel:
-    name = "base"
-    def receive(self, message: dict) -> dict:
-        raise NotImplementedError
-
-class WebChannel(Channel):
-    name = "web"
-    def __init__(self, tasks: TaskEngine | None = None):
-        self.tasks = tasks or TaskEngine()
-    def receive(self, message: dict) -> dict:
-        goal = str(message.get("text", "")).strip()
-        if not goal:
-            return {"ok": False, "error": "empty message"}
-        t = self.tasks.create(goal, dot_id=message.get("dot_id"))
-        return {"ok": True, "task_id": t.id}
-
 class Gateway:
-    def __init__(self, tasks: TaskEngine | None = None,
-                 submit: Callable[[str | None, str], Awaitable[Any]] | None = None):
-        self.tasks = tasks or TaskEngine()
+    def __init__(self, submit: Callable[[str | None, str], Awaitable[Any]] | None = None,
+                 secrets: dict[str, str] | None = None, rate_limit: int = 30,
+                 window_seconds: int = 60, replay_seconds: int = 300):
         self.submit = submit
-        self._channels: dict[str, Channel] = {}
+        self.secrets = secrets or {}
+        self.rate_limit = max(1, rate_limit)
+        self.window_seconds = max(1, window_seconds)
+        self.replay_seconds = max(1, replay_seconds)
+        self._hits: dict[str, list[float]] = {}
+        self._seen: dict[str, float] = {}
 
-    def register(self, channel: Channel):
-        self._channels[channel.name] = channel
+    def verify_signature(self, channel: str, body: bytes, signature: str | None,
+                         timestamp: str | None = None) -> bool:
+        secret = self.secrets.get(channel)
+        if not secret:
+            return True
+        if not signature or not timestamp:
+            return False
+        try:
+            ts = float(timestamp)
+        except ValueError:
+            return False
+        if abs(time.time() - ts) > self.replay_seconds:
+            return False
+        signed = timestamp.encode() + b"." + body
+        digest = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(digest, signature.removeprefix("sha256="))
 
-    def route(self, channel_name: str, message: dict) -> dict:
-        ch = self._channels.get(channel_name)
-        if ch is None:
-            return {"ok": False, "error": f"channel not enabled: {channel_name}"}
-        return ch.receive(message)
+    def _rate_ok(self, key: str) -> bool:
+        now = time.time()
+        hits = [x for x in self._hits.get(key, []) if now - x < self.window_seconds]
+        if len(hits) >= self.rate_limit:
+            self._hits[key] = hits
+            return False
+        hits.append(now)
+        self._hits[key] = hits
+        return True
 
-    async def route_async(self, channel_name: str, message: dict) -> dict:
+    async def route_async(self, channel_name: str, message: dict,
+                          body: bytes | None = None, signature: str | None = None,
+                          timestamp: str | None = None) -> dict:
         text = str(message.get("text", "")).strip()
+        sender = str(message.get("sender", "unknown"))
         if not text:
             return {"ok": False, "error": "empty message"}
+        if not self.verify_signature(channel_name, body or text.encode(), signature, timestamp):
+            return {"ok": False, "error": "invalid or expired channel signature"}
+        if not self._rate_ok(channel_name + ":" + sender):
+            return {"ok": False, "error": "rate limit exceeded"}
         if self.submit is None:
-            return self.route(channel_name, message)
+            return {"ok": False, "error": "channel gateway is not connected to worker"}
         task = await self.submit(message.get("dot_id"), text)
         return {"ok": True, "task_id": getattr(task, "id", str(task))}
-
-    def channels(self):
-        return sorted(self._channels)
