@@ -27,9 +27,15 @@ class TaskEngine:
         bus.publish("task.created", {"id": t.id, "goal": goal, "dot_id": dot_id})
         return t
 
-    def list(self, status: str | None = None, limit: int = 200) -> list:
+    def list(self, status: str | None = None,
+             dot_id: str | None = None, limit: int = 200) -> list:
+        if status and dot_id:
+            return repo.query(Task, (Task.status == status)
+                               & (Task.dot_id == dot_id), limit=limit)
         if status:
             return repo.query(Task, Task.status == status, limit=limit)
+        if dot_id:
+            return repo.query(Task, Task.dot_id == dot_id, limit=limit)
         return repo.get_all(Task, limit=limit, order_desc="created_at")
 
     def get(self, task_id: str) -> Task | None:

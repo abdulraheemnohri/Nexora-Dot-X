@@ -799,9 +799,17 @@ def create_app():
 
     # ---- tasks --------------------------------------------------------------
 
-    def _task_filter_links(current: str = ""):
+    def _task_filter_links(current: str = "", dot_id: str = ""):
+        def _qs(status, dot):
+            q = ""
+            if status:
+                q += "?status=" + status
+            if dot:
+                q += ("&" if q else "?") + "dot=" + dot
+            return q
+
         def _link(label, value):
-            href = "/tasks" + (("?status=" + value) if value else "")
+            href = "/tasks" + _qs(value, dot_id)
             shown = "[" + label + "]" if value == current else label
             return A(shown, href=href)
 
@@ -817,7 +825,7 @@ def create_app():
             _link("CANCELLED", "CANCELLED"))
 
     @rt("/tasks")
-    def task_page(status: str = ""):
+    def task_page(status: str = "", dot: str = ""):
         return Titled("Tasks", H1("Tasks"),
                       Form(Input(name="dot_id", placeholder="Dot ID",
                                  required=True),
@@ -826,17 +834,19 @@ def create_app():
                            Button("Queue task"), action="/api/tasks",
                            method="post"),
                       H2("Filter"),
-                      _task_filter_links(status),
+                      _task_filter_links(status, dot),
                       H2("Tasks"),
                       Div(id="tasks-live",
                           hx_get="/api/tasks/rows"
-                          + (("?status=" + status) if status else ""),
+                          + (("?status=" + status) if status else "")
+                          + ((("&dot=" + dot) if status else ("?dot=" + dot))
+                             if dot else ""),
                           hx_trigger="load, every 5s",
                           hx_swap="innerHTML"),
                       Div(id="tasks-result"))
 
     @rt("/api/tasks/rows")
-    def tasks_rows(status: str = "", page: int = 1):
+    def tasks_rows(status: str = "", dot: str = "", page: int = 1):
         """Live task table fragment (HTMX polling every 5s).
 
         Optional ?status= filter narrows the list to one status.
@@ -847,7 +857,8 @@ def create_app():
             page = max(1, int(page))
         except (TypeError, ValueError):
             page = 1
-        all_tasks = tasks.list(status=(status or None))
+        all_tasks = tasks.list(status=(status or None),
+                                 dot_id=(dot or None))
         total = len(all_tasks)
         pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
         start = (page - 1) * PAGE_SIZE
@@ -879,7 +890,8 @@ def create_app():
             links = ""
             for p in range(1, pages + 1):
                 href = ("/api/tasks/rows?page=" + str(p)
-                        + (("&status=" + status) if status else ""))
+                        + (("&status=" + status) if status else "")
+                        + (("&dot=" + dot) if dot else ""))
                 if p == page:
                     links += " <b>[" + str(p) + "]</b>"
                 else:

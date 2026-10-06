@@ -3,6 +3,18 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.52] - 2026-10-06
+
+### Added
+- Tasks page: the status filter links now also accept a
+  ?dot= query parameter, so the task list can be
+  narrowed to a single Dot (combined with a status
+  filter). The live polling keeps the dot filter.
+
+### Changed
+- TaskEngine.list() accepts an optional dot_id and
+  combines it with the status filter in a single query.
+
 ## [2.51] - 2026-10-06
 
 ### Changed
