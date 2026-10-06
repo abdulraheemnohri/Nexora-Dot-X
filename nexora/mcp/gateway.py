@@ -67,7 +67,10 @@ class MCPGateway:
             tool_id = f"mcp.{server_id}.{name}"
             async def call(args, c=client, n=name, sid=server_id):
                 decision = self.policy.evaluate(sid, n)
-                if decision.decision.value != 'ALLOW':
+                if decision.decision.value == 'BLOCK':
+                    return {'ok': False, 'output': f'MCP policy: {decision.reason}', 'decision': decision.decision.value}
+                # ASK is deliberately surfaced to System 1 instead of silently executing.
+                if decision.decision.value == 'ASK':
                     return {'ok': False, 'output': f'MCP policy: {decision.reason}', 'decision': decision.decision.value}
                 result = await c.call_tool(n, args if isinstance(args, dict) else {})
                 if isinstance(result, dict) and 'content' in result:
@@ -92,6 +95,16 @@ class MCPGateway:
 
     async def disconnect(self, server_id: str):
         server = self.servers[server_id]
-        client = server.metadata.pop('client', None)
+        client = server.metadata.pop("client", None)
         if client:
             await client.close()
+        prefix = f"mcp.{server_id}."
+        for tool_id in list(self.handlers):
+            if tool_id.startswith(prefix):
+                self.handlers.pop(tool_id, None)
+                self.registry._handlers.pop(tool_id, None)
+                self.registry._async_handlers.pop(tool_id, None)
+                spec = self.registry.get(tool_id)
+                if spec is not None:
+                    spec.enabled = False
+        return server
