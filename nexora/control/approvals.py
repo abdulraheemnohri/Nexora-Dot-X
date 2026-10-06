@@ -4,6 +4,7 @@ Approvals are single-use execution grants. Execution uses an atomic claim so
 two workers cannot consume the same approved action concurrently.
 """
 import time
+import json
 
 from nexora.database.models import Approval
 from nexora.database import repositories as repo
@@ -21,8 +22,10 @@ except Exception:
 
 class ApprovalCenter:
     def request(self, tool: str, action: str, reason: str = "",
-                risk: str = "medium", task_id: str | None = None, step_id: str | None = None) -> Approval:
-        a = Approval(tool=tool, action=action, reason=reason, risk=risk, task_id=task_id, step_id=step_id)
+                risk: str = "medium", task_id: str | None = None, step_id: str | None = None,
+                arguments: dict | None = None) -> Approval:
+        encoded = json.dumps(arguments, sort_keys=True, separators=(",", ":")) if arguments is not None else None
+        a = Approval(tool=tool, action=action, arguments_json=encoded, reason=reason, risk=risk, task_id=task_id, step_id=step_id)
         return repo.add_obj(a)
 
     def pending(self) -> list:
