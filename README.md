@@ -45,12 +45,9 @@ Optional extras: pip install -e ".[litert,browser,dev]"
     nexora start                      # server + background worker
     nexora start --profile battery-saver   # low-power device profile
     nexora start --with-litert-serve      # + litert-lm OpenAI server (9379)
-    nexora doctor                     # environment + provider dia
-gnostics
-    nexora chat "hi"                  # one-shot generation via mode
-
-
-l bus
+    nexora doctor                     # environment + provider diagnostics
+    nexora chat "hi"                  # one-shot generation via model bus
+    nexora status                     # full subsystem health overview
     nexora simulate "research AI news" # dry-run: plan + policy, no side effects
     nexora litert install             # download the built-in Gemma model
     nexora litert import -y           # import into the official litert-lm registry
@@ -67,11 +64,17 @@ First run: open http://127.0.0.1:8000/wizard for the setup wizard.
 | Page        | Purpose                                             |
 |-------------|-----------------------------------------------------|
 | /chat       | streaming chat with any enabled Dot (WebSocket)     |
-| /memory     | federated memory search + add memories              |
+| /memory     | federated memory search + add memories (paginated)  |
 | /models     | live model backend health, LiteRT scan              |
-| /skills     | approve / reject self-grown skills                  |
+| /skills     | approve / reject / scan / run skills, .zip import,  |
+|             | JSON export                                         |
+| /dots       | create Dots, pause/resume, live task views           |
+| /tasks      | queue tasks, filter by status, paginated detail view |
 | /approvals  | System 1 approval queue for tool actions            |
 | /settings   | device profiles, system status                      |
+
+The home page shows a live status dashboard (5s polling) with model health,
+approval/grant/skill counts and quick Pause/Resume buttons for every Dot.
 
 ## Security model
 
@@ -83,7 +86,8 @@ Every agent-proposed action passes the policy engine:
 
 All sensitive operations are written to the append-oriented audit log.
 Self-grown skills land in a pending queue and require explicit user approval
-from /skills; the AI cannot activate them.
+from /skills; the AI cannot activate them. Imported skill .zip archives
+are safely unpacked, statically scanned, and also land in the pending queue.
 
 Optional auth: enable with NEXORA_AUTH_ENABLED=true (see docs/AUTH.md) -
 pages get a login, API routes take a Bearer token.
@@ -95,16 +99,13 @@ telemetry or uploads happen. Flip to false to allow remote model fallback.
 
 ## Channels
 
-Back
-ground worker polls (only when tokens are configured):
+Background worker polls (only when tokens are configured):
 
-- Telegram: NEXORA_SEC
-RET_TELEGRAM_TOKEN
+- Telegram: NEXORA_SECRET_TELEGRAM_TOKEN
 - Discord:  NEXORA_SECRET_DISCORD_TOKEN + NEXORA_DISCORD_CHANNEL_ID
 - Slack:    NEXORA_SECRET_SLACK_BOT_TOKEN + NEXORA_SLACK_CHANNEL_ID
 
-Incoming m
-essages become tasks for the agent runtime.
+Incoming messages become tasks for the agent runtime.
 
 ## CI
 
@@ -142,3 +143,24 @@ MIT
 - **Local-first security**: local-only mode by default; network access
   gated behind explicit approval; dangerous patterns can never be
   whitelisted by grants.
+
+## 0.2.38-0.2.50 Highlights
+
+- **CLI**: task/dot management subcommands (`nexora tasks`,
+  `nexora dots`, `nexora approvals`), federated memory CLI
+  (`nexora memory search | remember | forget`) and a full subsystem
+  overview in `nexora status` (models, approvals, grants, skills, tasks,
+  dots, memories).
+- **Tasks UI**: live 5s polling, 20-per-page pagination, status filter
+  (RUNNING/COMPLETED/FAILED/CANCELLED) that survives live refresh, inline
+  Cancel and a numbered plan-step breakdown ("Step k/n" + task status)
+  in the detail view.
+- **Dots UI**: per-Dot detail page with live task polling and a working
+  Pause/Resume toggle (also inline on the home dashboard).
+- **Memory UI**: debounced live search as you type, paginated results
+  (20 per page).
+- **Skills UI**: .zip upload import with safe unpack + static scan gate,
+  JSON export endpoint (`/api/skills/export`) and a machine-readable
+  `/api/skills` listing with per-skill scan results.
+- **Home dashboard**: live status card plus pending-approvals badge in
+  the nav (e.g. "Approvals (3)").
