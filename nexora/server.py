@@ -1122,7 +1122,11 @@ def create_app():
             rows.append(Tr(Td(str(s.id)), Td(str(s.name)),
                            Td("enabled" if s.enabled else "disabled"),
                            Td("trusted" if s.trusted else "approval required"),
-                           Td(", ".join(__import__("json").loads(s.allowed_tools_json or "[]")))))
+                           Td(", ".join(__import__("json").loads(s.allowed_tools_json or "[]"))),
+                           Td(Form(Button("Connect"), method="post",
+                                   action="/api/mcp/connect/" + str(s.id)),
+                               Form(Button("Disconnect"), method="post",
+                                    action="/api/mcp/disconnect/" + str(s.id)))))
         return Titled("MCP", H1("MCP Gateway"),
                       P("Persistent MCP configuration. Untrusted tools remain subject to System 1 approval."),
                       Form(Input(name="server_id", placeholder="server id", required=True),
@@ -1132,7 +1136,7 @@ def create_app():
                            Label(Input(name="enabled", type="checkbox"), " Enabled"),
                            Label(Input(name="trusted", type="checkbox"), " Trusted"),
                            Button("Save MCP server"), method="post", action="/api/mcp/save"),
-                      Table(Thead(Th("ID"), Th("Name"), Th("State"), Th("Trust"), Th("Tools")),
+                      Table(Thead(Th("ID"), Th("Name"), Th("State"), Th("Trust"), Th("Tools"), Th("Actions")),
                             *rows) if rows else P("No MCP servers configured."))
 
     @rt("/api/mcp/connect/{server_id}", methods=["POST"])
