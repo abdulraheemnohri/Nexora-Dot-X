@@ -1135,6 +1135,28 @@ def create_app():
                       Table(Thead(Th("ID"), Th("Name"), Th("State"), Th("Trust"), Th("Tools")),
                             *rows) if rows else P("No MCP servers configured."))
 
+    @rt("/api/mcp/connect/{server_id}", methods=["POST"])
+    async def mcp_connect(server_id: str):
+        import json
+        row = next((x for x in mcp_config.list() if x.id == server_id), None)
+        if row is None:
+            return RedirectResponse("/mcp?error=not-found", status_code=303)
+        mcp_gateway.register_server(mcp_config.to_server(row))
+        try:
+            await mcp_gateway.connect_stdio(server_id, MCPProcessConfig(
+                command=json.loads(row.command_json or "[]"), cwd=row.cwd or None))
+        except Exception:
+            return RedirectResponse("/mcp?error=connect", status_code=303)
+        return RedirectResponse("/mcp", status_code=303)
+
+    @rt("/api/mcp/disconnect/{server_id}", methods=["POST"])
+    async def mcp_disconnect(server_id: str):
+        try:
+            await mcp_gateway.disconnect(server_id)
+        except Exception:
+            pass
+        return RedirectResponse("/mcp", status_code=303)
+
     @rt("/api/mcp/save", methods=["POST"])
     def mcp_save(server_id: str, name: str, command: str, cwd: str = "",
                  enabled: bool = False, trusted: bool = False):
