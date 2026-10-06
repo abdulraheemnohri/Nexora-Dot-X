@@ -15,8 +15,9 @@ from nexora.core.chat_service import ChatService
 from nexora.core.memory_service import MemoryService
 from nexora.core.model_service import ModelService
 from nexora.core.worker_runtime import WorkerRuntime
-from nexora.core.autonomous_worker import AutonomousWorker
+from nexora.core.autonomous_worker import AutonomousWorker, WorkerLimits
 from nexora.core.task_step_runner import TaskStepRunner
+from nexora.core.executor import Executor
 from nexora.tools.runtime import build_registry
 from nexora.core.profiles import PROFILES, get_profile
 from nexora.control.approvals import ApprovalCenter
@@ -92,9 +93,10 @@ def create_app():
     models = ModelService()
     auth = AuthManager()
     skills = SkillManager()
-    worker_runtime = WorkerRuntime(AutonomousWorker(tasks))
+    profile = get_profile()
+    worker_runtime = WorkerRuntime(AutonomousWorker(tasks, WorkerLimits(max_concurrent=profile.max_workers)))
     tool_registry = build_registry()
-    step_runner = TaskStepRunner(__import__("nexora.core.executor", fromlist=["Executor"]).Executor(tool_registry))
+    step_runner = TaskStepRunner(Executor(tool_registry))
 
     async def _worker_executor(step):
         return await step_runner(step)
@@ -120,6 +122,8 @@ def create_app():
                           A("Models", href="/models"), " · ",
                           A("Skills", href="/skills"), " · ",
                           A("Tasks", href="/tasks"), " · ",
+                          A("Worker", href="/worker"), " · ",
+                          A("MCP", href="/mcp"), " · ",
                           A("Approvals"
                             + ((" (" + str(pending_approvals) + ")")
                                if pending_approvals else ""),
@@ -1070,6 +1074,47 @@ def create_app():
                  + action.replace("<", "&lt;") + ". "
                  "Future requests will ask again.",
                  style="color:#4a4")
+
+    @rt("/worker")
+    def worker_page():
+        w = worker_runtime.worker
+        active = sorted(w._active)
+        queued = list(w._queued)
+        return Titled("Worker", H1("Autonomous Worker"),
+                      P("State: " + ("running" if worker_runtime.running else "stopped")),
+                      P("Max concurrent: " + str(w.limits.max_concurrent)
+                        + " · Max attempts: " + str(w.limits.max_attempts)
+                        + " · Step timeout: " + str(w.limits.step_timeout) + "s"),
+                      H2("Active"), Ul(*(Li(x) for x in active)) if active else P("None"),
+                      H2("Queued"), Ul(*(Li(x) for x in queued)) if queued else P("None"),
+                      Form(Button("Refresh"), hx_get="/api/worker/status",
+                           hx_target="#worker-status", hx_swap="innerHTML"),
+                      Div(id="worker-status"))
+
+    @rt("/api/worker/status")
+    def worker_status():
+        w = worker_runtime.worker
+        return Div(P("Running: " + str(worker_runtime.running)),
+                   P("Active: " + str(len(w._active))),
+                   P("Queued: " + str(len(w._queued))),
+                   P("Cancelled: " + str(len(w._cancelled))))
+
+    @rt("/mcp")
+    def mcp_page():
+        try:
+            from nexora.mcp.gateway import MCPGateway
+            gateway = MCPGateway()
+            servers = gateway.servers_list()
+        except Exception as exc:
+            return Titled("MCP", H1("MCP Gateway"), P("Unavailable: " + str(exc)))
+        rows = []
+        for s in servers:
+            rows.append(Tr(Td(str(s.get("id", ""))), Td(str(s.get("name", ""))),
+                           Td("enabled" if s.get("enabled") else "disabled")))
+        return Titled("MCP", H1("MCP Gateway"),
+                      P("MCP servers are transport/policy controlled; tool execution still passes through System 1."),
+                      Table(Thead(Th("ID"), Th("Name"), Th("State")), *rows)
+                      if rows else P("No MCP servers configured."))
 
     @rt("/settings")
     def settings_page():
