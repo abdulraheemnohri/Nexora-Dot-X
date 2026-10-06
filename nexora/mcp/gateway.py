@@ -79,6 +79,17 @@ class MCPGateway:
         server.metadata['client'] = client
         return tools
 
+    async def call(self, tool_id: str, arguments: dict[str, Any] | None = None):
+        spec = self.registry.get(tool_id)
+        if spec is None or not tool_id.startswith("mcp."):
+            return {"ok": False, "output": "unknown MCP tool"}
+        server_id = tool_id.split(".", 2)[1]
+        name = tool_id.split(".", 2)[2]
+        decision = self.policy.evaluate(server_id, name)
+        if decision.decision.value != "ALLOW":
+            return {"ok": False, "output": decision.reason, "decision": decision.decision.value}
+        return await self.registry.run_async(tool_id, arguments or {})
+
     async def disconnect(self, server_id: str):
         server = self.servers[server_id]
         client = server.metadata.pop('client', None)
