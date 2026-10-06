@@ -1,24 +1,49 @@
-import pytest
-from nexora.models.functiongemma import FunctionGemmaAdapter
-from nexora.core.action_bridge import ActionBridge
-from nexora.tools.registry import ToolRegistry, ToolSpec
+"""Tests for the FunctionGemma action layer (propose -> policy)."""
+from nexora.control.policy import PolicyEngine
+from nexora.models.functiongemma import ActionProposal, evaluate, parse, propose
 
-def test_functiongemma_parses_json_proposal():
-    proposal = FunctionGemmaAdapter.parse_output(
-        '{"tool":"terminal","arguments":{"action":"printf ok"},"confidence":0.9}'
-    )
-    assert proposal.tool == "terminal"
-    assert proposal.arguments["action"] == "printf ok"
-    assert proposal.confidence == 0.9
+FENCE = chr(96) * 3
 
-@pytest.mark.asyncio
-async def test_functiongemma_keeps_execution_behind_system1():
-    registry = ToolRegistry()
-    registry.register(ToolSpec("filesystem.read", "Filesystem Read", "Filesystem Read", input_schema={
-        "type":"object","properties":{"action":{"type":"string"}},
-        "required":["action"],"additionalProperties":False}), lambda a: {"ok":True,"output":"done"})
-    bridge = ActionBridge(registry)
-    adapter = FunctionGemmaAdapter(bridge, lambda prompt:
-        '{"tool":"filesystem.read","arguments":{"action":"read-only"},"confidence":1}')
-    result = await adapter.execute("do safe thing")
-    assert result["ok"]
+
+def test_parse_json_block():
+    out = parse('thinking... ' + FENCE + 'json {"tool": "terminal", "arguments": "ls -la"} ' + FENCE)
+    assert len(out) == 1
+    assert out[0].tool == "terminal"
+    assert out[0].arguments == "ls -la"
+
+
+def test_parse_tool_tag_and_action_line():
+    out = parse('<tool="filesystem.read">notes.md</tool>' + chr(10) + 'TOOL: git status')
+    assert len(out) == 2
+    assert out[0].tool == "filesystem.read"
+    assert out[1].tool == "terminal"
+    assert out[1].arguments == "git status"
+
+
+def test_parse_dedupe():
+    out = parse("TOOL: ls" + chr(10) + "ACTION: ls")
+    assert len(out) == 1
+
+
+def test_policy_blocks_dangerous():
+    r = propose("TOOL: rm -rf /")
+    assert r[0]["decision"] == "block"
+
+
+def test_policy_allows_safe():
+    r = propose("TOOL: ls")
+    assert r[0]["decision"] == "allow"
+
+
+def test_policy_asks_git_push():
+    r = propose("TOOL: git push origin main")
+    assert r[0]["decision"] == "ask"
+
+
+def test_evaluate_empty():
+    assert evaluate([], PolicyEngine()) == []
+
+
+def test_proposal_key_normalized():
+    p = ActionProposal("terminal", "git   status")
+    assert p.key() == "terminal:git status"
