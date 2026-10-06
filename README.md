@@ -45,7 +45,8 @@ Optional extras: pip install -e ".[litert,browser,dev]"
     nexora start                      # server + background worker
     nexora start --profile battery-saver   # low-power device profile
     nexora start --with-litert-serve      # + litert-lm OpenAI server (9379)
-    nexora doctor                     # environment + provider diagnostics
+    nexora doctor                     # environment + provider dia
+gnostics
     nexora chat "hi"                  # one-shot generation via model bus
     nexora status                     # full subsystem health overview
     nexora simulate "research AI news" # dry-run: plan + policy, no side effects
@@ -85,7 +86,8 @@ Every agent-proposed action passes the policy engine:
     BLOCK  -> refused and audited
 
 All sensitive operations are written to the append-oriented audit log.
-Self-grown skills land in a pending queue and require explicit user approval
+Self-gr
+own skills land in a pending queue and require explicit user approval
 from /skills; the AI cannot activate them. Imported skill .zip archives
 are safely unpacked, statically scanned, and also land in the pending queue.
 
@@ -135,7 +137,8 @@ MIT
   (`nexora litert list | install | import | run | serve | doctor`),
   OpenAI-compatible local server (`nexora litert serve`, port 9379) and
   `nexora start --with-litert-serve` to auto-attach it.
-- **Always-allow grants**: persisted to SQLite, survivable across
+- **Always-allow grants*
+*: persisted to SQLite, survivable across
   restarts, revocable from the /approvals UI (audited).
 - **Richer status**: `nexora status` and `GET /api/status` report
   version, uptime, profile, per-backend model status, approval/grant and
@@ -164,3 +167,27 @@ MIT
   `/api/skills` listing with per-skill scan results.
 - **Home dashboard**: live status card plus pending-approvals badge in
   the nav (e.g. "Approvals (3)").
+
+
+## TUI
+
+Interactive terminal dashboard:
+
+    nexora tui
+
+Keys: `d` Dots, `t` Tasks, `m` Models, `a` Approvals, `w` watch mode
+(auto-refresh), `r` refresh, `:help`, `:status`, `q` quit.
+
+## Channels
+
+| Channel | Activation |
+|---------|------------|
+| Web      | always on |
+| Telegram | NEXORA_SECRET_TELEGRAM_TOKEN |
+| Discord  | NEXORA_SECRET_DISCORD_TOKEN |
+| Slack    | NEXORA_SECRET_SLACK_TOKEN |
+| WhatsApp | NEXORA_SECRET_WHATSAPP_TOKEN |
+| Email    | SMTP settings |
+| Webhook  | NEXORA_SECRET_WEBHOOK (HMAC-SHA256 + replay window) |
+| Signal   | NEXORA_SECRET_SIGNAL + NEXORA_SIGNAL_ENDPOINT |
+| Teams    | NEXORA_SECRET_TEAMS + NEXORA_TEAMS_ENDPOINT |
