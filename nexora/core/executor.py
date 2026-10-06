@@ -84,7 +84,7 @@ class Executor:
             return StepOutcome(True, f"[dry-run] would execute {tool}: {action}")
         if self.tools is None:
             return StepOutcome(True, f"step '{step.get('kind', tool)}' completed (no tool side effects configured)")
-        result = await self.tools.run_async(tool, action)
+        result = await self.tools.run_async(tool, dispatch_action)
         return StepOutcome(result.get("ok", True), result.get("output", ""))
 
     async def resume_async(self, approval_id: str) -> StepOutcome:
@@ -107,6 +107,12 @@ class Executor:
 
         tool = approval.tool
         action = approval.action
+        dispatch_action = action
+        if getattr(approval, "arguments_json", None):
+            try:
+                dispatch_action = json.loads(approval.arguments_json)
+            except (TypeError, json.JSONDecodeError):
+                dispatch_action = action
         audit(
             "user", tool=tool, action=action, decision="ALLOW",
             outcome=f"executing approved action {approval.id}",
