@@ -24,6 +24,7 @@ class AutonomousWorker:
         self._queued: set[str] = set()
         self._cancelled: set[str] = set()
         self._running = False
+        self._active: set[str] = set()
 
     async def enqueue(self, task_id: str, priority: int = 1):
         if task_id not in self._queued:
@@ -36,7 +37,9 @@ class AutonomousWorker:
         self.tasks.set_status(task_id, TaskStatus.CANCELLED.value)
 
     async def _run_one(self, task_id: str, executor: Callable[[object], Awaitable[object]]):
-        if task_id in self._cancelled: return
+        if task_id in self._cancelled or task_id in self._active:
+            return
+        self._active.add(task_id)
         task = self.tasks.resume(task_id)
         if task is None: return
         step = self.tasks.next_resumable_step(task_id)
@@ -70,6 +73,8 @@ class AutonomousWorker:
                 await self.enqueue(task_id, priority=task.priority or 1)
             else:
                 self.tasks.set_status(task_id, TaskStatus.FAILED.value, error=str(exc))
+        finally:
+            self._active.discard(task_id)
 
     async def run_once(self, executor: Callable[[object], Awaitable[object]]):
         if self._queue.empty(): return False
