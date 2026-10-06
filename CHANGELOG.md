@@ -3,6 +3,87 @@
 All notable changes to Nexora Dot X are documented here.
 The format follows Keep a Changelog (https://keepachangelog.com/en/1.1.0/).
 
+## [2.54] - 2026-10-06
+
+### Added
+- Audit log viewer page (/audit) with a nav link on the
+  home page: the last 100 sensitive operations with time,
+  actor, tool, action, decision and outcome.
+- Skills detail view: inline file previews. The first three
+  text files (up to 4KB each) inside a skill directory are
+  shown in collapsible previews, escaped for safety.
+- Settings page: task worker section showing processing
+  state (running/PAUSED) and max workers, with a
+  pause/resume button (/api/worker/toggle) that is itself
+  audited. While paused, new tasks stay QUEUED.
+- Home status card: live task counts (running, queued,
+  completed, failed).
+
+## [2.53] - 2026-10-06
+
+### Added
+- Tasks page: dot filter dropdown listing every dot, so
+  tasks can be filtered by dot without knowing the Dot ID.
+  The currently active dot is pre-selected and the status
+  filter is preserved when switching dots.
+
+## [2.52] - 2026-10-06
+
+### Added
+- Tasks page: the status filter links now also accept a
+  ?dot= query parameter, so the task list can be
+  narrowed to a single Dot (combined with a status
+  filter). The live polling keeps the dot filter.
+
+### Changed
+- TaskEngine.list() accepts an optional dot_id and
+  combines it with the status filter in a single query.
+
+## [2.51] - 2026-10-06
+
+### Changed
+- Docs: README refreshed to cover the 0.2.38-0.2.50
+  feature wave - new Web UI pages (/dots, /tasks), the
+  home dashboard dot quick-toggle, paginated memory
+  search, skills .zip import + JSON export, the CLI
+  task/dot/approval/memory subcommands and the full
+  `nexora status` overview. Several broken line wraps
+  in older README sections were also repaired.
+
+## [2.50] - 2026-10-06
+
+### Added
+- Home dashboard: live status card now lists every Dot
+  with its state and an inline Pause/Resume button,
+  so Dots can be controlled straight from the home
+  page.
+- Memory page: live search results are paginated (20
+  per page) with numbered page links.
+
+### Fixed
+- Dots page: the Pause/Resume form did not actually
+  submit the Dot ID (the hidden input sat outside the
+  form element), so toggling never worked. The hidden
+  input is now inside the form.
+## [2.49] - 2026-10-05
+
+### Fixed
+- Tasks page: the status filter now survives live
+  polling. Filter links reload /tasks with a
+  ?status= query parameter, the active filter is
+  highlighted, and the 5-second auto-refresh keeps
+  the filtered view instead of resetting to all
+  tasks.
+
+## [2.48] - 2026-10-05
+
+### Changed
+- CLI: `nexora status` now also reports total and
+  enabled Dot counts plus the total memory record
+  count, giving a one-line health overview of every
+  subsystem (models, approvals, grants, skills,
+  tasks, dots, memories).
+
 ## [2.47] - 2026-10-05
 
 ### Added
