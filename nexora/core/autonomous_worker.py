@@ -54,18 +54,20 @@ class AutonomousWorker:
         if task_id in self._cancelled or task_id in self._active:
             return
         self._active.add(task_id)
-        task = self.tasks.resume(task_id)
-        if task is None: return
-        step = self.tasks.next_resumable_step(task_id)
-        if step is None:
-            self.tasks.set_status(task_id, TaskStatus.COMPLETED.value)
-            return
-        attempts = int(step.attempts or 0)
-        if attempts >= self.limits.max_attempts:
-            self.tasks.set_status(task_id, TaskStatus.FAILED.value, error="maximum attempts exceeded")
-            return
-        self.tasks.checkpoint(step.id, status="running", attempts=attempts + 1)
         try:
+            task = self.tasks.resume(task_id)
+            if task is None:
+                return
+            step = self.tasks.next_resumable_step(task_id)
+            if step is None:
+                self.tasks.set_status(task_id, TaskStatus.COMPLETED.value)
+                return
+            attempts = int(step.attempts or 0)
+            if attempts >= self.limits.max_attempts:
+                self.tasks.set_status(task_id, TaskStatus.FAILED.value, error="maximum attempts exceeded")
+                return
+            self.tasks.checkpoint(step.id, status="running", attempts=attempts + 1)
+            try:
             result = await asyncio.wait_for(executor(step), timeout=self.limits.step_timeout)
             self.tasks.checkpoint(step.id, status="completed", output=str(result))
             if self.tasks.next_resumable_step(task_id) is None:
@@ -73,20 +75,20 @@ class AutonomousWorker:
             else:
                 self.tasks.set_status(task_id, TaskStatus.QUEUED.value)
                 await self.enqueue(task_id, priority=task.priority or 1)
-        except WaitingApproval as exc:
-            self.tasks.set_status(task_id, TaskStatus.WAITING_APPROVAL.value, error=str(exc))
-            self.tasks.checkpoint(step.id, status="pending", error=str(exc))
-        except asyncio.CancelledError:
-            self.tasks.checkpoint(step.id, status="cancelled", error="worker cancelled")
-            self.tasks.set_status(task_id, TaskStatus.CANCELLED.value)
-            raise
-        except Exception as exc:
-            self.tasks.checkpoint(step.id, status="failed", error=str(exc))
-            if attempts + 1 < self.limits.max_attempts:
-                self.tasks.set_status(task_id, TaskStatus.RETRYING.value, error=str(exc))
-                await self.enqueue(task_id, priority=task.priority or 1)
-            else:
-                self.tasks.set_status(task_id, TaskStatus.FAILED.value, error=str(exc))
+            except WaitingApproval as exc:
+                self.tasks.set_status(task_id, TaskStatus.WAITING_APPROVAL.value, error=str(exc))
+                self.tasks.checkpoint(step.id, status="pending", error=str(exc))
+            except asyncio.CancelledError:
+                self.tasks.checkpoint(step.id, status="cancelled", error="worker cancelled")
+                self.tasks.set_status(task_id, TaskStatus.CANCELLED.value)
+                raise
+            except Exception as exc:
+                self.tasks.checkpoint(step.id, status="failed", error=str(exc))
+                if attempts + 1 < self.limits.max_attempts:
+                    self.tasks.set_status(task_id, TaskStatus.RETRYING.value, error=str(exc))
+                    await self.enqueue(task_id, priority=task.priority or 1)
+                else:
+                    self.tasks.set_status(task_id, TaskStatus.FAILED.value, error=str(exc))
         finally:
             self._active.discard(task_id)
 
